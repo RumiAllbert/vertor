@@ -33,7 +33,7 @@ export function UserMenu({ session }: { session: SessionInfo }) {
   if (!session.user) {
     return (
       <a
-        href="/api/auth/signin"
+        href="/sign-in?callbackUrl=/app"
         className="inline-flex h-8 items-center text-[12px] underline decoration-hairline decoration-1 underline-offset-[6px] transition-colors hover:decoration-ink"
       >
         Sign in

@@ -14,7 +14,7 @@ export function MarketingHeader({ session }: { session: SessionInfo }) {
         <ThemeToggle />
         {session.enabled && !session.user && (
           <a
-            href="/api/auth/signin"
+            href="/sign-in"
             className="text-muted-foreground underline decoration-hairline decoration-1 underline-offset-[6px] transition-colors hover:text-foreground hover:decoration-ink"
           >
             Sign in

@@ -130,7 +130,7 @@ export function Hero({ authEnabled }: { authEnabled: boolean }) {
           </Link>
           {authEnabled && (
             <a
-              href="/api/auth/signin"
+              href="/sign-in"
               className="text-[14px] italic text-muted-foreground underline decoration-hairline decoration-1 underline-offset-[6px] transition-colors hover:text-foreground hover:decoration-ink"
             >
               or sign in with Google to keep your history
