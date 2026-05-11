@@ -214,6 +214,41 @@ svg.lucide,
   100% { background-position: -120% 0; }
 }
 
+/* Showcase reveal animations — drive the mockup state changes smoothly. */
+.reveal-text {
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path 1100ms cubic-bezier(0.7, 0, 0.2, 1);
+}
+.reveal-text[data-revealed="true"] {
+  clip-path: inset(0 0 0 0);
+}
+.cross-fade {
+  opacity: 0;
+  transition: opacity 600ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.cross-fade[data-visible="true"] {
+  opacity: 1;
+}
+.slide-in {
+  opacity: 0;
+  transform: translateY(10px) scale(0.97);
+  transition: opacity 450ms cubic-bezier(0.2, 0.7, 0.3, 1),
+              transform 500ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.slide-in[data-visible="true"] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.word-highlight {
+  background-color: transparent;
+  border-radius: 2px;
+  padding: 0 2px;
+  transition: background-color 500ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.word-highlight[data-active="true"] {
+  background-color: color-mix(in oklch, var(--ink) 22%, transparent);
+}
+
 /* Blur reveal — for the empty-state quote. */
 @keyframes blurUp {
   from { opacity: 0; filter: blur(8px); transform: translateY(6px); }

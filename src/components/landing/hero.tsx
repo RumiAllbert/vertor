@@ -4,50 +4,56 @@ import { SoftAurora } from "./soft-aurora";
 export function Hero({ authEnabled }: { authEnabled: boolean }) {
   return (
     <section className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 text-center">
+      {/* Aurora — fills the section, masked at top/bottom so it bleeds into the page edges */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 z-0"
+        className="pointer-events-auto absolute inset-0 z-0"
         style={{
           WebkitMaskImage:
-            "linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%)",
+            "linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)",
           maskImage:
-            "linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%)",
+            "linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)",
         }}
       >
         <SoftAurora
-          color1="#8aa5d0"
-          color2="#9c6680"
-          brightness={0.62}
-          scale={1.5}
-          bandSpread={2.0}
-          mouseInfluence={0.1}
+          color1="#0056e3"
+          color2="#e864fa"
+          speed={0.6}
+          scale={0.5}
+          brightness={1}
+          noiseFrequency={4}
+          noiseAmplitude={1.5}
+          bandHeight={0.55}
+          bandSpread={1.1}
+          octaveDecay={0.34}
+          layerOffset={0.65}
+          colorSpeed={2.1}
+          enableMouseInteraction
+          mouseInfluence={0.15}
         />
       </div>
 
-      <div className="relative z-10 flex flex-col items-center">
-        <h1
-          className="display blur-up text-[20vw] leading-[0.9] tracking-tight md:text-[180px] md:leading-[0.9]"
-          style={{ animationDelay: "60ms" }}
-        >
-          Vertor
-        </h1>
-        <p
-          className="display blur-up mt-8 max-w-[46ch] text-[18px] italic text-muted-foreground md:text-[22px]"
-          style={{ animationDelay: "260ms" }}
-        >
+      {/* Wordmark sits in the open — full impact, no chrome */}
+      <h1
+        className="display blur-up relative z-10 text-[20vw] leading-[0.9] tracking-tight md:text-[180px] md:leading-[0.9]"
+        style={{ animationDelay: "60ms" }}
+      >
+        Vertor
+      </h1>
+
+      {/* Frosted card — keeps the smaller copy legible through the aurora */}
+      <div
+        className="blur-up relative z-10 mt-8 flex flex-col items-center rounded-xl border border-foreground/[0.06] bg-background/35 px-8 py-7 backdrop-blur-xl backdrop-saturate-150 shadow-[0_20px_60px_-30px_rgb(0_0_0/0.22)] md:px-12 md:py-8"
+        style={{ animationDelay: "240ms" }}
+      >
+        <p className="display max-w-[46ch] text-center text-[18px] italic text-muted-foreground md:text-[22px]">
           from <span className="not-italic font-medium text-foreground">vertere</span>, Latin —
           to turn, to render, to translate.
         </p>
-        <p
-          className="blur-up mt-12 max-w-[38ch] text-[16px] text-muted-foreground md:text-[17px]"
-          style={{ animationDelay: "420ms" }}
-        >
+        <p className="mt-5 max-w-[38ch] text-center text-[15px] text-muted-foreground md:text-[16px]">
           A workspace for translators, writers, and editors.
         </p>
-        <div
-          className="blur-up mt-12 flex flex-col items-center gap-3 sm:flex-row sm:gap-6"
-          style={{ animationDelay: "580ms" }}
-        >
+        <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
           <Link
             href="/app"
             className="inline-flex h-11 items-center gap-2 rounded-sm border border-foreground bg-foreground px-6 text-[14px] font-medium tracking-tight text-background shadow-[2px_2px_0_var(--ink)] transition-all hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0_var(--ink)]"
