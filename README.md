@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# vertor
 
-## Getting Started
+A literary translator that actually cares about voice.
 
-First, run the development server:
+Most translation tools spit out something technically correct and tonally flat. vertor is built for translating prose where the *feel* matters — fiction, essays, copy, anything where rhythm and register are part of the meaning. Pick a model, paste your text, and get a translation that reads like it was written, not converted.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## What it does
+
+- **Translate** whole documents while preserving paragraphs, markdown, and the author's voice
+- **Variations** — click any word, phrase, paragraph, or the whole text and get three alternative renderings with different tone or syntax
+- **Multi-model** — pick between Gemini, Claude, and GPT through a single dropdown, all routed via [Vercel AI Gateway](https://vercel.com/docs/ai-gateway)
+- **Export** to PDF or DOCX when you're happy with it
+- **Save & sign in** — Google login keeps your documents around (optional, runs fine without auth too)
+
+## How it works
+
+```mermaid
+flowchart LR
+    U[You paste text] --> APP[Next.js App]
+    APP --> DETECT[/api/detect/]
+    APP --> TRANSLATE[/api/translate/]
+    APP --> VARY[/api/variations/]
+
+    DETECT --> GW[Vercel AI Gateway]
+    TRANSLATE --> GW
+    VARY --> GW
+
+    GW --> G[Google Gemini]
+    GW --> A[Anthropic Claude]
+    GW --> O[OpenAI GPT]
+
+    APP <--> DB[(Neon Postgres<br/>via Drizzle)]
+    APP --> EXPORT[/api/export/]
+    EXPORT --> FILE[PDF / DOCX]
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+One Gateway key, all the providers. Drizzle handles the schema, Neon stores the documents, Auth.js handles Google sign-in. Nothing fancy, just composed well.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Next.js 16** App Router + React 19
+- **AI SDK v6** through Vercel AI Gateway
+- **Auth.js v5** (beta) + Drizzle adapter + Google OAuth
+- **Drizzle ORM** + Neon Postgres
+- **Tailwind v4** + shadcn/ui
 
-## Learn More
+## Running it locally
 
-To learn more about Next.js, take a look at the following resources:
+You'll need pnpm, a Vercel account (for the AI Gateway key + Neon), and Google OAuth creds if you want sign-in.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+pnpm install
+cp .env.example .env.local   # fill in the values
+pnpm drizzle-kit push        # apply schema to your DB
+pnpm dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Then open http://localhost:3000.
 
-## Deploy on Vercel
+`.env.example` lists what's needed — the short version: an `AI_GATEWAY_API_KEY`, a `DATABASE_URL`, and the three `AUTH_*` vars. If you skip the auth vars the app still runs, just without sign-in or saved docs.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Contributing
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+PRs welcome. The codebase is small and readable on purpose — here's where things live:
+
+- `src/app/api/` — the route handlers
+- `src/lib/prompts.ts` — all LLM prompts (edit here, not inline in routes)
+- `src/lib/models.ts` — model registry; add a new model here
+- `src/lib/languages.ts` — supported languages
+- `src/components/translator/` — the UI
+
+If you're adding a model, just append to `MODELS` in `models.ts` with its Gateway slug. If you're tweaking translation behavior, `prompts.ts` is the one file you want.
+
+## Feature requests & bugs
+
+[Open an issue](https://github.com/RumiAllbert/vertor/issues). Be casual about it — a couple of sentences and a screenshot is plenty. If it's a translation quality complaint, paste the source, the output, and which model you used.
+
+For bigger ideas (new export formats, glossary support, side-by-side diff view, etc.) feel free to open a discussion-style issue first so we can sketch it out before anyone writes code.
+
+## License
+
+[MIT](LICENSE). Use it, fork it, ship something with it. A nod back is appreciated but not required.
