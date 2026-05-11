@@ -51,7 +51,7 @@ export function HistorySidebar({
           className="group flex w-full items-baseline justify-between border-b border-hairline pb-2 text-left text-[13px] transition-colors hover:text-foreground"
         >
           <span className="font-medium">New document</span>
-          <span className="text-muted-foreground transition-colors group-hover:text-vermilion">+</span>
+          <span className="text-muted-foreground transition-colors group-hover:text-ink">+</span>
         </button>
       </div>
 
@@ -90,13 +90,13 @@ export function HistorySidebar({
               className={cn(
                 "fade-up group relative flex w-full cursor-pointer items-start gap-3 rounded-sm px-3 py-2 text-left transition-colors",
                 currentId === d.id
-                  ? "bg-vermilion/10"
+                  ? "bg-ink/10"
                   : "hover:bg-foreground/[0.04]",
               )}
               style={{ animationDelay: `${Math.min(i * 22, 300)}ms` }}
             >
               {currentId === d.id && (
-                <span aria-hidden className="absolute left-0 top-2 bottom-2 w-px bg-vermilion" />
+                <span aria-hidden className="absolute left-0 top-2 bottom-2 w-px bg-ink" />
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[13px] font-medium leading-tight">{d.title}</div>
@@ -112,7 +112,7 @@ export function HistorySidebar({
                   e.stopPropagation();
                   onDelete(d.id);
                 }}
-                className="text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-vermilion group-hover:opacity-100"
+                className="text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-ink group-hover:opacity-100"
                 aria-label="Delete"
               >
                 delete

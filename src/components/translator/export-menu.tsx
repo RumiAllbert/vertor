@@ -59,7 +59,7 @@ export function ExportMenu({
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled}
-        className="inline-flex h-8 items-center text-[12px] tracking-tight text-foreground underline decoration-hairline decoration-1 underline-offset-[6px] transition-colors hover:decoration-vermilion disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline"
+        className="inline-flex h-8 items-center text-[12px] tracking-tight text-foreground underline decoration-hairline decoration-1 underline-offset-[6px] transition-colors hover:decoration-ink disabled:cursor-not-allowed disabled:text-muted-foreground disabled:no-underline"
       >
         Export
       </DropdownMenuTrigger>

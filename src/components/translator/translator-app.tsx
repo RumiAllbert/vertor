@@ -347,9 +347,9 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             onClick={() => translate()}
             disabled={!doc.sourceText.trim() || translating}
             className={cn(
-              "group inline-flex h-8 items-center gap-2 rounded-sm border border-foreground bg-foreground px-3.5 text-[12.5px] font-medium tracking-tight text-background shadow-[2px_2px_0_var(--vermilion)] transition-all",
-              "hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0_var(--vermilion)]",
-              "active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0_var(--vermilion)]",
+              "group inline-flex h-8 items-center gap-2 rounded-sm border border-foreground bg-foreground px-3.5 text-[12.5px] font-medium tracking-tight text-background shadow-[2px_2px_0_var(--ink)] transition-all",
+              "hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0_var(--ink)]",
+              "active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0_var(--ink)]",
               "disabled:cursor-not-allowed disabled:border-hairline disabled:bg-transparent disabled:text-muted-foreground disabled:shadow-none disabled:hover:translate-x-0 disabled:hover:translate-y-0",
             )}
           >
@@ -357,7 +357,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
               aria-hidden
               className={cn(
                 "h-1 w-1 rounded-full transition-colors",
-                translating ? "bg-background" : "bg-vermilion",
+                translating ? "bg-background" : "bg-ink",
               )}
             />
             <span className={translating ? "shiny" : ""}>
@@ -381,7 +381,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             onClick={() => setShowInstruction((s) => !s)}
             className={cn(
               "h-8 text-[12px] italic transition-colors",
-              showInstruction ? "text-vermilion" : "text-muted-foreground hover:text-foreground",
+              showInstruction ? "text-ink" : "text-muted-foreground hover:text-foreground",
             )}
           >
             instruction
@@ -396,7 +396,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
         </header>
 
         {showInstruction && (
-          <div className="border-b border-hairline bg-[color-mix(in_oklch,var(--vermilion)_4%,var(--background))] px-6 py-3">
+          <div className="border-b border-hairline bg-[color-mix(in_oklch,var(--ink)_4%,var(--background))] px-6 py-3">
             <div className="flex items-baseline gap-3">
               <span className="small-caps shrink-0">Instruction</span>
               <Textarea
@@ -471,20 +471,20 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
               >
                 {doc.translatedText}
                 {translating && (
-                  <span className="caret ml-0.5 inline-block h-[0.95em] w-[2px] bg-vermilion align-text-bottom" />
+                  <span className="caret ml-0.5 inline-block h-[0.95em] w-[2px] bg-ink align-text-bottom" />
                 )}
               </div>
 
               {selection && !popoverOpen && (
                 <button
                   onClick={showVariations}
-                  className="absolute z-10 inline-flex items-center gap-1.5 border border-foreground bg-background px-2.5 py-1 text-[11px] tracking-tight text-foreground shadow-[2px_2px_0_var(--vermilion)] transition-transform hover:translate-x-[-1px] hover:translate-y-[-1px]"
+                  className="absolute z-10 inline-flex items-center gap-1.5 border border-foreground bg-background px-2.5 py-1 text-[11px] tracking-tight text-foreground shadow-[2px_2px_0_var(--ink)] transition-transform hover:translate-x-[-1px] hover:translate-y-[-1px]"
                   style={{
                     top: (popoverAnchor?.top ?? 0) + 4,
                     left: popoverAnchor?.left ?? 0,
                   }}
                 >
-                  <span className="font-mono text-[10px] text-vermilion">+3</span>
+                  <span className="font-mono text-[10px] text-ink">+3</span>
                   <span>alternatives</span>
                   <span className="text-[10px] italic text-muted-foreground">{selection.kind}</span>
                 </button>
@@ -526,7 +526,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                 : "Tip: highlight text on the right to refine word-by-word."}
           </span>
           <span className="flex items-baseline gap-2 text-[10.5px] uppercase tracking-[0.2em] text-muted-foreground">
-            <span className={cn("inline-block h-[6px] w-[6px] rounded-full", translating ? "bg-vermilion caret" : "bg-muted-foreground/50")} />
+            <span className={cn("inline-block h-[6px] w-[6px] rounded-full", translating ? "bg-ink caret" : "bg-muted-foreground/50")} />
             {translating ? "Live" : "Idle"}
           </span>
         </footer>

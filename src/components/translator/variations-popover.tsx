@@ -99,7 +99,7 @@ export function VariationsPopover(props: Props) {
             <button
               onClick={fetchVariations}
               disabled={loading}
-              className="inline-flex items-center gap-2 text-[12px] text-foreground transition-colors hover:text-vermilion disabled:opacity-50"
+              className="inline-flex items-center gap-2 text-[12px] text-foreground transition-colors hover:text-ink disabled:opacity-50"
             >
               <span className="font-mono text-[11px]">{loading ? "…" : "→"}</span>
               {variations.length ? "Regenerate" : "Suggest three"}
@@ -107,7 +107,7 @@ export function VariationsPopover(props: Props) {
             {kind !== "document" && instruction.trim() && (
               <button
                 onClick={() => onApplyToWhole(instruction)}
-                className="text-[11px] italic text-muted-foreground underline decoration-hairline underline-offset-[6px] transition-colors hover:text-vermilion"
+                className="text-[11px] italic text-muted-foreground underline decoration-hairline underline-offset-[6px] transition-colors hover:text-ink"
                 title="Apply this instruction to the whole document"
               >
                 apply across the whole doc
@@ -129,7 +129,7 @@ export function VariationsPopover(props: Props) {
                 key={i}
                 onClick={() => onApply(v)}
                 className={cn(
-                  "group block w-full px-4 py-3 text-left transition-colors hover:bg-[color-mix(in_oklch,var(--vermilion)_6%,transparent)]",
+                  "group block w-full px-4 py-3 text-left transition-colors hover:bg-[color-mix(in_oklch,var(--ink)_6%,transparent)]",
                   i > 0 && "border-t border-hairline",
                 )}
               >

@@ -45,7 +45,7 @@ export function ModeToggle({
           <span
             className={cn(
               "inline-block h-1.5 w-1.5 rounded-full",
-              mode === "simple" ? "bg-vermilion" : "bg-foreground/60",
+              mode === "simple" ? "bg-ink" : "bg-foreground/60",
             )}
           />
           <span className="capitalize">{mode}</span>
@@ -57,12 +57,12 @@ export function ModeToggle({
           className={cn(
             "relative block w-full border-b border-hairline px-4 py-3 text-left transition-colors",
             mode === "simple"
-              ? "bg-vermilion/8"
+              ? "bg-ink/8"
               : "hover:bg-foreground/[0.04]",
           )}
         >
           {mode === "simple" && (
-            <span aria-hidden className="absolute left-0 top-2 bottom-2 w-px bg-vermilion" />
+            <span aria-hidden className="absolute left-0 top-2 bottom-2 w-px bg-ink" />
           )}
           <div className="flex items-baseline justify-between">
             <span className="text-[13.5px] font-medium">Simple</span>
@@ -80,12 +80,12 @@ export function ModeToggle({
           className={cn(
             "relative block w-full px-4 py-3 text-left transition-colors",
             mode === "advanced"
-              ? "bg-vermilion/8"
+              ? "bg-ink/8"
               : "hover:bg-foreground/[0.04]",
           )}
         >
           {mode === "advanced" && (
-            <span aria-hidden className="absolute left-0 top-2 bottom-2 w-px bg-vermilion" />
+            <span aria-hidden className="absolute left-0 top-2 bottom-2 w-px bg-ink" />
           )}
           <div className="flex items-baseline justify-between">
             <span className="text-[13.5px] font-medium">Advanced</span>
