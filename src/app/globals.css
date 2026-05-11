@@ -1,26 +1,222 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Vertor — editorial / literary palette.
+ * Light: warm parchment, ink, vermilion accent (a nod to proofreader's marks).
+ * Dark:  warm-leaning ink, parchment-toned text, same vermilion.
+ */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: oklch(0.972 0.012 85);     /* warm parchment */
+  --foreground: oklch(0.205 0.012 60);     /* warm ink */
+  --card: oklch(0.985 0.009 85);
+  --card-foreground: oklch(0.205 0.012 60);
+  --muted: oklch(0.945 0.014 85);
+  --muted-foreground: oklch(0.46 0.012 70);
+  --accent: oklch(0.945 0.014 85);
+  --accent-foreground: oklch(0.205 0.012 60);
+  --border: oklch(0.86 0.014 80);          /* warm hairline */
+  --hairline: oklch(0.82 0.012 75);
+  --input: oklch(0.86 0.014 80);
+  --ring: oklch(0.55 0.16 30);             /* vermilion */
+  --primary: oklch(0.205 0.012 60);
+  --primary-foreground: oklch(0.972 0.012 85);
+  --secondary: oklch(0.945 0.014 85);
+  --secondary-foreground: oklch(0.205 0.012 60);
+  --destructive: oklch(0.52 0.20 27);
+  --destructive-foreground: oklch(0.985 0.009 85);
+  --vermilion: oklch(0.55 0.18 32);        /* sole accent */
+  --highlight: oklch(0.55 0.18 32 / 0.18);
+  --radius: 0.375rem;                      /* tighter — feels printed */
+}
+
+.dark {
+  --background: oklch(0.156 0.008 70);     /* warm deep ink */
+  --foreground: oklch(0.92 0.012 85);
+  --card: oklch(0.185 0.008 70);
+  --card-foreground: oklch(0.92 0.012 85);
+  --muted: oklch(0.215 0.008 70);
+  --muted-foreground: oklch(0.62 0.012 75);
+  --accent: oklch(0.225 0.008 70);
+  --accent-foreground: oklch(0.92 0.012 85);
+  --border: oklch(0.27 0.01 70);
+  --hairline: oklch(0.30 0.01 70);
+  --input: oklch(0.27 0.01 70);
+  --ring: oklch(0.65 0.16 30);
+  --primary: oklch(0.92 0.012 85);
+  --primary-foreground: oklch(0.156 0.008 70);
+  --secondary: oklch(0.225 0.008 70);
+  --secondary-foreground: oklch(0.92 0.012 85);
+  --destructive: oklch(0.62 0.20 27);
+  --destructive-foreground: oklch(0.985 0.009 85);
+  --vermilion: oklch(0.68 0.16 30);
+  --highlight: oklch(0.68 0.16 30 / 0.22);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-hairline: var(--hairline);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-vermilion: var(--vermilion);
+  --color-highlight: var(--highlight);
+  --font-sans: var(--font-instrument-sans);
+  --font-serif: var(--font-source-serif);
+  --font-display: var(--font-instrument-serif);
+  --font-mono: var(--font-jetbrains-mono);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "ss02", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
+/* Refined SVG strokes — lucide defaults to 2, looks bulky in a literary UI */
+svg.lucide,
+.lucide {
+  stroke-width: 1.5;
+}
+
+/* Selection — proofreader's vermilion at low opacity */
+::selection {
+  background: var(--highlight);
+  color: var(--foreground);
+}
+
+/* Focus rings — hairline, never neon */
+*:focus-visible {
+  outline: 1px solid var(--vermilion);
+  outline-offset: 2px;
+  border-radius: 1px;
+}
+
+/* Scrollbar — barely there */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--muted-foreground) 22%, transparent);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--muted-foreground) 40%, transparent);
+}
+
+/* Editor surface — the actual prose */
+.editor-surface {
+  font-family: var(--font-source-serif), Georgia, "Times New Roman", serif;
+  font-size: 18px;
+  line-height: 1.65;
+  letter-spacing: -0.003em;
+  font-feature-settings: "kern", "liga", "onum";
+}
+.editor-surface p {
+  margin: 0 0 1em 0;
+}
+.editor-surface::placeholder {
+  font-style: italic;
+  color: var(--muted-foreground);
+}
+
+/* Display type — the wordmark */
+.display {
+  font-family: var(--font-instrument-serif), Georgia, serif;
+  font-style: italic;
+  letter-spacing: -0.01em;
+}
+
+/* Editorial small caps — for section labels */
+.small-caps {
+  font-family: var(--font-instrument-sans), ui-sans-serif, system-ui;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+/* Proofreader's mark — used for the live indicator */
+.mark {
+  color: var(--vermilion);
+}
+
+/* Fade-in for sidebar entries */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+
+/* Streaming caret */
+@keyframes caret {
+  0%, 100% { opacity: 0.9; }
+  50%      { opacity: 0; }
+}
+.caret { animation: caret 0.95s ease-in-out infinite; }
+
+/* Shiny text — used on the primary CTA when streaming.
+ * Inspired by reactbits.dev/text-animations/shiny-text. CSS-only. */
+.shiny {
+  background: linear-gradient(
+    100deg,
+    currentColor 0%,
+    currentColor 40%,
+    color-mix(in oklch, currentColor 35%, transparent) 50%,
+    currentColor 60%,
+    currentColor 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shiny 1.6s linear infinite;
+}
+@keyframes shiny {
+  0%   { background-position: 220% 0; }
+  100% { background-position: -120% 0; }
+}
+
+/* Blur reveal — for the empty-state quote. */
+@keyframes blurUp {
+  from { opacity: 0; filter: blur(8px); transform: translateY(6px); }
+  to   { opacity: 1; filter: blur(0);   transform: translateY(0); }
+}
+.blur-up { animation: blurUp 700ms cubic-bezier(0.2, 0.65, 0.25, 1) both; }
