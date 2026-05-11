@@ -43,9 +43,12 @@
 - Create: `src/app/(marketing)/page.tsx`
 - Create: `src/components/landing/marketing-header.tsx`
 - Create: `src/components/landing/hero.tsx`
+- Create: `src/components/landing/soft-aurora.tsx` — WebGL aurora background (React Bits, tuned to ink palette)
+- Create: `src/components/landing/soft-aurora.css`
 - Create: `src/components/landing/preview.tsx`
 - Create: `src/components/landing/closing.tsx`
 - Create: `public/landing/preview.png`, `public/landing/preview-dark.png` (committed binaries)
+- Add dep: `ogl`
 
 **Migration (Task 5) — create + modify**
 - Create: `src/app/api/documents/migrate/route.ts`
@@ -972,6 +975,16 @@ migration in the next task."
 - Create: `src/components/landing/closing.tsx`
 - Create: `public/landing/preview.png`, `preview-dark.png`
 
+### Step 4.0: Install ogl
+
+- [ ] Run:
+
+```bash
+pnpm add ogl
+```
+
+Expected: dep added, no peer warnings.
+
 ### Step 4.1: Move the translator route
 
 - [ ] Run:
@@ -1021,59 +1034,395 @@ export function MarketingHeader({ session }: { session: SessionInfo }) {
 }
 ```
 
-### Step 4.3: Hero component
+### Step 4.3a: SoftAurora CSS
+
+- [ ] Create `src/components/landing/soft-aurora.css`:
+
+```css
+.soft-aurora-container {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.soft-aurora-container canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+```
+
+### Step 4.3b: SoftAurora component (typed, ink palette)
+
+- [ ] Create `src/components/landing/soft-aurora.tsx`. This is the React Bits component adapted to TypeScript with the props we'll actually use:
+
+```tsx
+"use client";
+import * as React from "react";
+import { Renderer, Program, Mesh, Triangle } from "ogl";
+import "./soft-aurora.css";
+
+type Props = {
+  speed?: number;
+  scale?: number;
+  brightness?: number;
+  color1?: string;
+  color2?: string;
+  noiseFrequency?: number;
+  noiseAmplitude?: number;
+  bandHeight?: number;
+  bandSpread?: number;
+  octaveDecay?: number;
+  layerOffset?: number;
+  colorSpeed?: number;
+  enableMouseInteraction?: boolean;
+  mouseInfluence?: number;
+};
+
+function hexToVec3(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  return [
+    parseInt(h.slice(0, 2), 16) / 255,
+    parseInt(h.slice(2, 4), 16) / 255,
+    parseInt(h.slice(4, 6), 16) / 255,
+  ];
+}
+
+const vertexShader = /* glsl */ `
+attribute vec2 uv;
+attribute vec2 position;
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = vec4(position, 0, 1);
+}
+`;
+
+const fragmentShader = /* glsl */ `
+precision highp float;
+
+uniform float uTime;
+uniform vec3 uResolution;
+uniform float uSpeed;
+uniform float uScale;
+uniform float uBrightness;
+uniform vec3 uColor1;
+uniform vec3 uColor2;
+uniform float uNoiseFreq;
+uniform float uNoiseAmp;
+uniform float uBandHeight;
+uniform float uBandSpread;
+uniform float uOctaveDecay;
+uniform float uLayerOffset;
+uniform float uColorSpeed;
+uniform vec2 uMouse;
+uniform float uMouseInfluence;
+uniform bool uEnableMouse;
+
+#define TAU 6.28318
+
+vec3 gradientHash(vec3 p) {
+  p = vec3(
+    dot(p, vec3(127.1, 311.7, 234.6)),
+    dot(p, vec3(269.5, 183.3, 198.3)),
+    dot(p, vec3(169.5, 283.3, 156.9))
+  );
+  vec3 h = fract(sin(p) * 43758.5453123);
+  float phi = acos(2.0 * h.x - 1.0);
+  float theta = TAU * h.y;
+  return vec3(cos(theta) * sin(phi), sin(theta) * cos(phi), cos(phi));
+}
+
+float quinticSmooth(float t) {
+  float t2 = t * t;
+  float t3 = t * t2;
+  return 6.0 * t3 * t2 - 15.0 * t2 * t2 + 10.0 * t3;
+}
+
+vec3 cosineGradient(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+  return a + b * cos(TAU * (c * t + d));
+}
+
+float perlin3D(float amplitude, float frequency, float px, float py, float pz) {
+  float x = px * frequency;
+  float y = py * frequency;
+
+  float fx = floor(x); float fy = floor(y); float fz = floor(pz);
+  float cx = ceil(x);  float cy = ceil(y);  float cz = ceil(pz);
+
+  vec3 g000 = gradientHash(vec3(fx, fy, fz));
+  vec3 g100 = gradientHash(vec3(cx, fy, fz));
+  vec3 g010 = gradientHash(vec3(fx, cy, fz));
+  vec3 g110 = gradientHash(vec3(cx, cy, fz));
+  vec3 g001 = gradientHash(vec3(fx, fy, cz));
+  vec3 g101 = gradientHash(vec3(cx, fy, cz));
+  vec3 g011 = gradientHash(vec3(fx, cy, cz));
+  vec3 g111 = gradientHash(vec3(cx, cy, cz));
+
+  float d000 = dot(g000, vec3(x - fx, y - fy, pz - fz));
+  float d100 = dot(g100, vec3(x - cx, y - fy, pz - fz));
+  float d010 = dot(g010, vec3(x - fx, y - cy, pz - fz));
+  float d110 = dot(g110, vec3(x - cx, y - cy, pz - fz));
+  float d001 = dot(g001, vec3(x - fx, y - fy, pz - cz));
+  float d101 = dot(g101, vec3(x - cx, y - fy, pz - cz));
+  float d011 = dot(g011, vec3(x - fx, y - cy, pz - cz));
+  float d111 = dot(g111, vec3(x - cx, y - cy, pz - cz));
+
+  float sx = quinticSmooth(x - fx);
+  float sy = quinticSmooth(y - fy);
+  float sz = quinticSmooth(pz - fz);
+
+  float lx00 = mix(d000, d100, sx);
+  float lx10 = mix(d010, d110, sx);
+  float lx01 = mix(d001, d101, sx);
+  float lx11 = mix(d011, d111, sx);
+
+  float ly0 = mix(lx00, lx10, sy);
+  float ly1 = mix(lx01, lx11, sy);
+
+  return amplitude * mix(ly0, ly1, sz);
+}
+
+float auroraGlow(float t, vec2 shift) {
+  vec2 uv = gl_FragCoord.xy / uResolution.y;
+  uv += shift;
+
+  float noiseVal = 0.0;
+  float freq = uNoiseFreq;
+  float amp = uNoiseAmp;
+  vec2 samplePos = uv * uScale;
+
+  for (float i = 0.0; i < 3.0; i += 1.0) {
+    noiseVal += perlin3D(amp, freq, samplePos.x, samplePos.y, t);
+    amp *= uOctaveDecay;
+    freq *= 2.0;
+  }
+
+  float yBand = uv.y * 10.0 - uBandHeight * 10.0;
+  return 0.3 * max(exp(uBandSpread * (1.0 - 1.1 * abs(noiseVal + yBand))), 0.0);
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / uResolution.xy;
+  float t = uSpeed * 0.4 * uTime;
+
+  vec2 shift = vec2(0.0);
+  if (uEnableMouse) {
+    shift = (uMouse - 0.5) * uMouseInfluence;
+  }
+
+  vec3 col = vec3(0.0);
+  col += 0.99 * auroraGlow(t, shift) * cosineGradient(uv.x + uTime * uSpeed * 0.2 * uColorSpeed, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.3, 0.20, 0.20)) * uColor1;
+  col += 0.99 * auroraGlow(t + uLayerOffset, shift) * cosineGradient(uv.x + uTime * uSpeed * 0.1 * uColorSpeed, vec3(0.5), vec3(0.5), vec3(2.0, 1.0, 0.0), vec3(0.5, 0.20, 0.25)) * uColor2;
+
+  col *= uBrightness;
+  float alpha = clamp(length(col), 0.0, 1.0);
+  gl_FragColor = vec4(col, alpha);
+}
+`;
+
+export function SoftAurora({
+  speed = 0.4,
+  scale = 1.2,
+  brightness = 0.55,
+  color1 = "#7a9ec8",
+  color2 = "#1e3a5f",
+  noiseFrequency = 1.6,
+  noiseAmplitude = 1.0,
+  bandHeight = 0.45,
+  bandSpread = 1.6,
+  octaveDecay = 0.22,
+  layerOffset = 0.85,
+  colorSpeed = 0.6,
+  enableMouseInteraction = true,
+  mouseInfluence = 0.08,
+}: Props) {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const renderer = new Renderer({ alpha: true, premultipliedAlpha: false });
+    const gl = renderer.gl;
+    gl.clearColor(0, 0, 0, 0);
+
+    let program: Program | null = null;
+    const currentMouse: [number, number] = [0.5, 0.5];
+    let targetMouse: [number, number] = [0.5, 0.5];
+
+    function handleMouseMove(e: MouseEvent) {
+      const rect = gl.canvas.getBoundingClientRect();
+      targetMouse = [
+        (e.clientX - rect.left) / rect.width,
+        1.0 - (e.clientY - rect.top) / rect.height,
+      ];
+    }
+
+    function handleMouseLeave() {
+      targetMouse = [0.5, 0.5];
+    }
+
+    function resize() {
+      renderer.setSize(container!.offsetWidth, container!.offsetHeight);
+      if (program) {
+        program.uniforms.uResolution.value = [
+          gl.canvas.width,
+          gl.canvas.height,
+          gl.canvas.width / gl.canvas.height,
+        ];
+      }
+    }
+    window.addEventListener("resize", resize);
+    resize();
+
+    const geometry = new Triangle(gl);
+    program = new Program(gl, {
+      vertex: vertexShader,
+      fragment: fragmentShader,
+      uniforms: {
+        uTime: { value: 0 },
+        uResolution: {
+          value: [gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height],
+        },
+        uSpeed: { value: speed },
+        uScale: { value: scale },
+        uBrightness: { value: brightness },
+        uColor1: { value: hexToVec3(color1) },
+        uColor2: { value: hexToVec3(color2) },
+        uNoiseFreq: { value: noiseFrequency },
+        uNoiseAmp: { value: noiseAmplitude },
+        uBandHeight: { value: bandHeight },
+        uBandSpread: { value: bandSpread },
+        uOctaveDecay: { value: octaveDecay },
+        uLayerOffset: { value: layerOffset },
+        uColorSpeed: { value: colorSpeed },
+        uMouse: { value: new Float32Array([0.5, 0.5]) },
+        uMouseInfluence: { value: mouseInfluence },
+        uEnableMouse: { value: enableMouseInteraction },
+      },
+    });
+
+    const mesh = new Mesh(gl, { geometry, program });
+    container.appendChild(gl.canvas);
+
+    if (enableMouseInteraction) {
+      gl.canvas.addEventListener("mousemove", handleMouseMove);
+      gl.canvas.addEventListener("mouseleave", handleMouseLeave);
+    }
+
+    let animationFrameId = 0;
+
+    function update(time: number) {
+      animationFrameId = requestAnimationFrame(update);
+      program!.uniforms.uTime.value = time * 0.001;
+
+      if (enableMouseInteraction) {
+        currentMouse[0] += 0.05 * (targetMouse[0] - currentMouse[0]);
+        currentMouse[1] += 0.05 * (targetMouse[1] - currentMouse[1]);
+        program!.uniforms.uMouse.value[0] = currentMouse[0];
+        program!.uniforms.uMouse.value[1] = currentMouse[1];
+      } else {
+        program!.uniforms.uMouse.value[0] = 0.5;
+        program!.uniforms.uMouse.value[1] = 0.5;
+      }
+
+      renderer.render({ scene: mesh });
+    }
+    animationFrameId = requestAnimationFrame(update);
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      window.removeEventListener("resize", resize);
+      if (enableMouseInteraction) {
+        gl.canvas.removeEventListener("mousemove", handleMouseMove);
+        gl.canvas.removeEventListener("mouseleave", handleMouseLeave);
+      }
+      container.removeChild(gl.canvas);
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+    };
+  }, [
+    speed, scale, brightness, color1, color2, noiseFrequency, noiseAmplitude,
+    bandHeight, bandSpread, octaveDecay, layerOffset, colorSpeed,
+    enableMouseInteraction, mouseInfluence,
+  ]);
+
+  return <div ref={containerRef} className="soft-aurora-container" />;
+}
+```
+
+**Why these defaults differ from React Bits' shipped values:** the demo uses a magenta-on-white palette at full brightness — pure SaaS aesthetic. Vertor's defaults pull two ink-blues (`#7a9ec8` pale, `#1e3a5f` deep) at `brightness: 0.55` and `speed: 0.4`, with `mouseInfluence: 0.08` (was 0.25). The result is a slow, low-saturation wash that sits behind the wordmark rather than competing with it.
+
+### Step 4.3c: Hero component (with aurora background)
 
 - [ ] Create `src/components/landing/hero.tsx`:
 
 ```tsx
 import Link from "next/link";
+import { SoftAurora } from "./soft-aurora";
 
 export function Hero({ authEnabled }: { authEnabled: boolean }) {
   return (
-    <section className="relative flex min-h-dvh flex-col items-center justify-center px-6 text-center">
-      <h1
-        className="display blur-up text-[14vw] leading-[0.95] md:text-[120px] md:leading-[0.95]"
-        style={{ animationDelay: "60ms" }}
-      >
-        Vertor
-      </h1>
-      <p
-        className="display blur-up mt-6 max-w-[40ch] text-[15px] italic text-muted-foreground md:text-[17px]"
-        style={{ animationDelay: "260ms" }}
-      >
-        from <span className="not-italic font-medium text-foreground">vertere</span>, Latin —
-        to turn, to render, to translate.
-      </p>
-      <p
-        className="blur-up mt-10 max-w-[34ch] text-[13.5px] text-muted-foreground"
-        style={{ animationDelay: "420ms" }}
-      >
-        A workspace for translators, writers, and editors.
-      </p>
+    <section className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 text-center">
+      {/* Aurora background — masked so it fades into the page at top/bottom edges */}
       <div
-        className="blur-up mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-5"
-        style={{ animationDelay: "580ms" }}
+        aria-hidden
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          WebkitMaskImage:
+            "linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%)",
+          maskImage:
+            "linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%)",
+        }}
       >
-        <Link
-          href="/app"
-          className="inline-flex h-10 items-center gap-2 rounded-sm border border-foreground bg-foreground px-5 text-[13px] font-medium tracking-tight text-background shadow-[2px_2px_0_var(--ink)] transition-all hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0_var(--ink)]"
-        >
-          Start writing
-          <span aria-hidden className="font-mono text-[11px] opacity-60">↵</span>
-        </Link>
-        {authEnabled && (
-          <a
-            href="/api/auth/signin"
-            className="text-[13px] italic text-muted-foreground underline decoration-hairline decoration-1 underline-offset-[6px] transition-colors hover:text-foreground hover:decoration-ink"
-          >
-            or sign in with Google to keep your history
-          </a>
-        )}
+        <SoftAurora />
       </div>
+
+      <div className="relative z-10 flex flex-col items-center">
+        <h1
+          className="display blur-up text-[14vw] leading-[0.95] md:text-[120px] md:leading-[0.95]"
+          style={{ animationDelay: "60ms" }}
+        >
+          Vertor
+        </h1>
+        <p
+          className="display blur-up mt-6 max-w-[40ch] text-[15px] italic text-muted-foreground md:text-[17px]"
+          style={{ animationDelay: "260ms" }}
+        >
+          from <span className="not-italic font-medium text-foreground">vertere</span>, Latin —
+          to turn, to render, to translate.
+        </p>
+        <p
+          className="blur-up mt-10 max-w-[34ch] text-[13.5px] text-muted-foreground"
+          style={{ animationDelay: "420ms" }}
+        >
+          A workspace for translators, writers, and editors.
+        </p>
+        <div
+          className="blur-up mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-5"
+          style={{ animationDelay: "580ms" }}
+        >
+          <Link
+            href="/app"
+            className="inline-flex h-10 items-center gap-2 rounded-sm border border-foreground bg-foreground px-5 text-[13px] font-medium tracking-tight text-background shadow-[2px_2px_0_var(--ink)] transition-all hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0_var(--ink)]"
+          >
+            Start writing
+            <span aria-hidden className="font-mono text-[11px] opacity-60">↵</span>
+          </Link>
+          {authEnabled && (
+            <a
+              href="/api/auth/signin"
+              className="text-[13px] italic text-muted-foreground underline decoration-hairline decoration-1 underline-offset-[6px] transition-colors hover:text-foreground hover:decoration-ink"
+            >
+              or sign in with Google to keep your history
+            </a>
+          )}
+        </div>
+      </div>
+
       <a
         href="#preview"
         aria-label="Scroll down"
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 text-muted-foreground transition-colors hover:text-foreground"
+        className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 text-muted-foreground transition-colors hover:text-foreground"
       >
         ↓
       </a>
@@ -1264,17 +1613,22 @@ Expected: routes show `/`, `/app`, `/sign-in`. Both `/` and `/app` listed as sta
 ### Step 4.10: Visual verification
 
 - [ ] Visit http://localhost:3000/ — landing page loads with hero, preview, closing.
-- [ ] Visit http://localhost:3000/app — translator app loads as before.
-- [ ] Resize to 375×812 (mobile) — landing remains readable; the wordmark scales via `14vw`. Hero CTAs stack.
+- [ ] Confirm the aurora animates softly behind the wordmark (a slow blue wash; the mask should make it fade out before the section ends, so it doesn't bleed into Section 2).
+- [ ] Move the mouse across the hero — the aurora should drift very slightly with the cursor.
+- [ ] Open the browser devtools console — no WebGL errors.
+- [ ] Visit http://localhost:3000/app — translator app loads as before (no aurora; it's hero-only).
+- [ ] Resize to 375×812 (mobile) — landing remains readable; the wordmark scales via `14vw`. Hero CTAs stack. The aurora still renders.
 
 ### Step 4.11: Commit
 
 ```bash
-git add src/app/ src/components/landing/ public/landing/ && \
+git add src/app/ src/components/landing/ public/landing/ package.json pnpm-lock.yaml && \
 git -c commit.gpgsign=false commit -m "Add editorial landing page; move app to /app
 
 New marketing route group at / with three full-height sections (hero,
-app preview, closing). Translator moves to /app. Preview screenshots
+app preview, closing). Hero uses a WebGL aurora (ogl) tuned to the ink
+palette at low brightness so it sits behind the wordmark rather than
+competing with it. Translator moves to /app. Preview screenshots
 captured at 1440x900 in both color schemes."
 ```
 
