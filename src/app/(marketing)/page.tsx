@@ -1,7 +1,7 @@
 import { auth, authEnabled } from "@/lib/auth";
 import { MarketingHeader } from "@/components/landing/marketing-header";
 import { Hero } from "@/components/landing/hero";
-import { Preview } from "@/components/landing/preview";
+import { Showcase } from "@/components/landing/showcase";
 import { Closing } from "@/components/landing/closing";
 
 export default async function LandingPage() {
@@ -21,7 +21,7 @@ export default async function LandingPage() {
     <>
       <MarketingHeader session={sessionInfo} />
       <Hero authEnabled={authEnabled} />
-      <Preview />
+      <Showcase />
       <Closing authEnabled={authEnabled} />
     </>
   );
