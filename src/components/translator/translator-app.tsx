@@ -11,13 +11,13 @@ import { ModeToggle, useMode } from "./mode-toggle";
 import { SIMPLE_MODE_MODEL_ID } from "@/lib/models";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  deleteLocalDoc,
   deriveTitle,
-  listLocalDocs,
   newLocalDoc,
-  saveLocalDoc,
   type LocalDoc,
-} from "@/lib/storage";
+  LocalDocStore,
+  type DocStore,
+} from "@/lib/doc-store";
+import { CloudDocStore } from "@/lib/cloud-doc-store";
 import { languageName } from "@/lib/languages";
 import type { VariationKind } from "@/lib/prompts";
 import { cn } from "@/lib/utils";
@@ -68,31 +68,37 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const abortRef = React.useRef<AbortController | null>(null);
 
+  const store: DocStore = React.useMemo(
+    () => (session.user ? new CloudDocStore() : new LocalDocStore()),
+    [session.user],
+  );
+
   React.useEffect(() => {
-    setDocs(listLocalDocs());
-  }, []);
+    store.list().then(setDocs);
+  }, [store]);
 
   React.useEffect(() => {
     if (!doc.sourceText.trim() && !doc.translatedText.trim()) return;
-    const t = setTimeout(() => {
+    const t = setTimeout(async () => {
       const updated: LocalDoc = {
         ...doc,
         title: doc.title === "Untitled" && doc.sourceText ? deriveTitle(doc.sourceText) : doc.title,
         updatedAt: Date.now(),
       };
-      saveLocalDoc(updated);
-      setDocs(listLocalDocs());
+      await store.save(updated);
+      setDocs(await store.list());
     }, 600);
     return () => clearTimeout(t);
-  }, [doc]);
+  }, [doc, store]);
 
   React.useEffect(() => {
-    const all = listLocalDocs();
-    if (all.length > 0 && !doc.sourceText && !doc.translatedText) {
-      setDoc(all[0]);
-    }
+    store.list().then((all) => {
+      if (all.length > 0 && !doc.sourceText && !doc.translatedText) {
+        setDoc(all[0]);
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [store]);
 
   const updateDoc = React.useCallback((patch: Partial<LocalDoc>) => {
     setDoc((d) => ({ ...d, ...patch, updatedAt: Date.now() }));
@@ -128,9 +134,9 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     }
   };
 
-  const removeDocument = (id: string) => {
-    deleteLocalDoc(id);
-    setDocs(listLocalDocs());
+  const removeDocument = async (id: string) => {
+    await store.remove(id);
+    setDocs(await store.list());
     if (doc.id === id) newDocument();
   };
 

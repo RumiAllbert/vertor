@@ -3,7 +3,7 @@ import * as React from "react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import type { LocalDoc } from "@/lib/storage";
+import type { LocalDoc } from "@/lib/doc-store";
 
 function timeAgo(ts: number) {
   const s = Math.floor((Date.now() - ts) / 1000);
