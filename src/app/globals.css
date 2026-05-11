@@ -214,30 +214,33 @@ svg.lucide,
   100% { background-position: -120% 0; }
 }
 
-/* Showcase reveal animations — drive the mockup state changes smoothly. */
+/* Showcase reveal animations — drive the mockup state changes smoothly.
+ * Class-based (not data-attribute) so JSX boolean shortcuts don't bite. */
 .reveal-text {
   clip-path: inset(0 100% 0 0);
   transition: clip-path 1100ms cubic-bezier(0.7, 0, 0.2, 1);
 }
-.reveal-text[data-revealed="true"] {
+.reveal-text.is-revealed {
   clip-path: inset(0 0 0 0);
 }
 .cross-fade {
   opacity: 0;
   transition: opacity 600ms cubic-bezier(0.2, 0.7, 0.3, 1);
 }
-.cross-fade[data-visible="true"] {
+.cross-fade.is-visible {
   opacity: 1;
 }
 .slide-in {
   opacity: 0;
-  transform: translateY(10px) scale(0.97);
-  transition: opacity 450ms cubic-bezier(0.2, 0.7, 0.3, 1),
-              transform 500ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  transform: translateY(14px) scale(0.96);
+  transition: opacity 500ms cubic-bezier(0.2, 0.7, 0.3, 1),
+              transform 550ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  pointer-events: none;
 }
-.slide-in[data-visible="true"] {
+.slide-in.is-visible {
   opacity: 1;
   transform: translateY(0) scale(1);
+  pointer-events: auto;
 }
 .word-highlight {
   background-color: transparent;
@@ -245,7 +248,7 @@ svg.lucide,
   padding: 0 2px;
   transition: background-color 500ms cubic-bezier(0.2, 0.7, 0.3, 1);
 }
-.word-highlight[data-active="true"] {
+.word-highlight.is-active {
   background-color: color-mix(in oklch, var(--ink) 22%, transparent);
 }
 

@@ -4,88 +4,94 @@ import { SoftAurora } from "./soft-aurora";
 export function Hero({ authEnabled }: { authEnabled: boolean }) {
   return (
     <section className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden px-6 text-center">
-      {/* Aurora — fills the section, masked at top/bottom so it bleeds into the page edges */}
+      {/* Aurora — tightly radial-masked so it reads as a soft glow behind the
+          wordmark, not a section-wide wash. Text below sits on clean parchment. */}
       <div
         aria-hidden
-        className="pointer-events-auto absolute inset-0 z-0"
+        className="pointer-events-none absolute inset-0 z-0"
         style={{
           WebkitMaskImage:
-            "linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)",
+            "radial-gradient(ellipse 55% 42% at 50% 42%, black 0%, rgba(0,0,0,0.7) 45%, transparent 78%)",
           maskImage:
-            "linear-gradient(to bottom, transparent 0%, black 10%, black 90%, transparent 100%)",
+            "radial-gradient(ellipse 55% 42% at 50% 42%, black 0%, rgba(0,0,0,0.7) 45%, transparent 78%)",
         }}
       >
         <SoftAurora
           color1="#0056e3"
           color2="#e864fa"
-          speed={0.6}
-          scale={0.5}
-          brightness={1}
-          noiseFrequency={4}
-          noiseAmplitude={1.5}
-          bandHeight={0.55}
-          bandSpread={1.1}
-          octaveDecay={0.34}
-          layerOffset={0.65}
-          colorSpeed={2.1}
+          speed={0.45}
+          scale={0.55}
+          brightness={0.85}
+          noiseFrequency={3.2}
+          noiseAmplitude={1.2}
+          bandHeight={0.5}
+          bandSpread={1.0}
+          octaveDecay={0.36}
+          layerOffset={0.6}
+          colorSpeed={1.6}
           enableMouseInteraction
-          mouseInfluence={0.15}
+          mouseInfluence={0.1}
         />
       </div>
 
-      {/* Wordmark sits in the open — full impact, no chrome */}
+      {/* Editorial eyebrow */}
+      <p
+        className="blur-up small-caps relative z-10 mb-8"
+        style={{ animationDelay: "0ms" }}
+      >
+        An editorial workspace
+      </p>
+
+      {/* Wordmark — no chrome, no glass, just type */}
       <h1
-        className="display blur-up relative z-10 text-[20vw] leading-[0.9] tracking-tight md:text-[180px] md:leading-[0.9]"
-        style={{ animationDelay: "60ms" }}
+        className="display blur-up relative z-10 text-[22vw] leading-[0.85] tracking-[-0.02em] md:text-[200px] md:leading-[0.85]"
+        style={{ animationDelay: "80ms" }}
       >
         Vertor
       </h1>
 
-      {/* Frosted card — glass backdrop is masked with a radial fade so its
-          edges dissolve into the aurora instead of forming a hard rectangle. */}
+      {/* Hairline rule, framed by the Latin gloss — printed-page feel */}
       <div
-        className="blur-up relative z-10 mt-8 px-12 py-10 md:px-20 md:py-12"
-        style={{ animationDelay: "240ms" }}
+        className="blur-up relative z-10 mt-10 flex w-full max-w-[640px] items-center gap-5 px-4"
+        style={{ animationDelay: "220ms" }}
       >
-        {/* Soft glass layer — masked so it fades to transparent at the edges */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 bg-background/40 backdrop-blur-xl backdrop-saturate-150"
-          style={{
-            WebkitMaskImage:
-              "radial-gradient(ellipse 75% 95% at center, black 35%, transparent 100%)",
-            maskImage:
-              "radial-gradient(ellipse 75% 95% at center, black 35%, transparent 100%)",
-          }}
-        />
+        <span aria-hidden className="h-px flex-1 bg-hairline/70" />
+        <p className="display whitespace-nowrap text-[15px] italic text-muted-foreground md:text-[17px]">
+          from <span className="not-italic font-medium text-foreground">vertere</span>
+          <span className="mx-1.5 opacity-50">·</span>
+          to turn, to render, to translate
+        </p>
+        <span aria-hidden className="h-px flex-1 bg-hairline/70" />
+      </div>
 
-        {/* Content sits on top of the masked glass */}
-        <div className="relative flex flex-col items-center">
-          <p className="display max-w-[46ch] text-center text-[18px] italic text-muted-foreground md:text-[22px]">
-            from <span className="not-italic font-medium text-foreground">vertere</span>, Latin —
-            to turn, to render, to translate.
-          </p>
-          <p className="mt-5 max-w-[38ch] text-center text-[15px] text-muted-foreground md:text-[16px]">
-            A workspace for translators, writers, and editors.
-          </p>
-          <div className="mt-7 flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
-            <Link
-              href="/app"
-              className="inline-flex h-11 items-center gap-2 rounded-sm border border-foreground bg-foreground px-6 text-[14px] font-medium tracking-tight text-background shadow-[2px_2px_0_var(--ink)] transition-all hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0_var(--ink)]"
-            >
-              Start writing
-              <span aria-hidden className="font-mono text-[11px] opacity-60">↵</span>
-            </Link>
-            {authEnabled && (
-              <a
-                href="/api/auth/signin"
-                className="text-[14px] italic text-muted-foreground underline decoration-hairline decoration-1 underline-offset-[6px] transition-colors hover:text-foreground hover:decoration-ink"
-              >
-                or sign in with Google to keep your history
-              </a>
-            )}
-          </div>
-        </div>
+      {/* Plain-prose tagline */}
+      <p
+        className="blur-up relative z-10 mt-6 max-w-[42ch] text-[15px] text-muted-foreground md:text-[16px]"
+        style={{ animationDelay: "320ms" }}
+      >
+        A workspace for translators, writers, and editors.
+      </p>
+
+      {/* CTAs */}
+      <div
+        className="blur-up relative z-10 mt-10 flex flex-col items-center gap-4 sm:flex-row sm:gap-7"
+        style={{ animationDelay: "420ms" }}
+      >
+        <Link
+          href="/app"
+          className="inline-flex h-11 items-center gap-2 rounded-sm border border-foreground bg-foreground px-6 text-[14px] font-medium tracking-tight text-background shadow-[2px_2px_0_var(--ink)] transition-all hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0_var(--ink)]"
+        >
+          Start writing
+          <span aria-hidden className="font-mono text-[11px] opacity-60">↵</span>
+        </Link>
+        {authEnabled && (
+          <a
+            href="/api/auth/signin"
+            className="text-[14px] italic text-muted-foreground underline decoration-hairline decoration-1 underline-offset-[6px] transition-colors hover:text-foreground hover:decoration-ink"
+          >
+            or sign in with Google to keep your history
+          </a>
+        )}
       </div>
 
       <a
