@@ -18,6 +18,7 @@ import {
   type DocStore,
 } from "@/lib/doc-store";
 import { CloudDocStore } from "@/lib/cloud-doc-store";
+import { MigrateBanner } from "./migrate-banner";
 import { languageName } from "@/lib/languages";
 import type { VariationKind } from "@/lib/prompts";
 import { cn } from "@/lib/utils";
@@ -112,6 +113,33 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   }, [mode, doc.modelId]);
 
   const effectiveModelId = mode === "simple" ? SIMPLE_MODE_MODEL_ID : doc.modelId;
+
+  // Migration: when signed in, check for local docs to offer moving to the cloud.
+  const [pendingLocalDocs, setPendingLocalDocs] = React.useState<LocalDoc[]>([]);
+
+  React.useEffect(() => {
+    if (!session.user) {
+      setPendingLocalDocs([]);
+      return;
+    }
+    const local = new LocalDocStore();
+    local.list().then((locals) => {
+      if (locals.length > 0) setPendingLocalDocs(locals);
+    });
+  }, [session.user]);
+
+  const migrateLocalDocs = React.useCallback(async () => {
+    const res = await fetch("/api/documents/migrate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ docs: pendingLocalDocs }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const local = new LocalDocStore();
+    for (const d of pendingLocalDocs) await local.remove(d.id);
+    setPendingLocalDocs([]);
+    setDocs(await store.list());
+  }, [pendingLocalDocs, store]);
 
   const newDocument = () => {
     const fresh = newLocalDoc({
@@ -292,13 +320,24 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
       {sidebarOpen && (
-        <HistorySidebar
-          docs={docs}
-          currentId={doc.id}
-          onSelect={openDocument}
-          onNew={newDocument}
-          onDelete={removeDocument}
-        />
+        <div className="flex h-full w-[252px] shrink-0 flex-col border-r border-hairline bg-muted/40">
+          {session.user && pendingLocalDocs.length > 0 && (
+            <MigrateBanner
+              localDocs={pendingLocalDocs}
+              userKey={session.user.email ?? "user"}
+              onMigrate={migrateLocalDocs}
+              onDismiss={() => setPendingLocalDocs([])}
+            />
+          )}
+          <HistorySidebar
+            docs={docs}
+            currentId={doc.id}
+            onSelect={openDocument}
+            onNew={newDocument}
+            onDelete={removeDocument}
+            hideOuterShell
+          />
+        </div>
       )}
 
       <main className="flex min-w-0 flex-1 flex-col">

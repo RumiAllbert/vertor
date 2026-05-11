@@ -20,12 +20,14 @@ export function HistorySidebar({
   onSelect,
   onNew,
   onDelete,
+  hideOuterShell = false,
 }: {
   docs: LocalDoc[];
   currentId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
+  hideOuterShell?: boolean;
 }) {
   const [q, setQ] = React.useState("");
   const filtered = React.useMemo(() => {
@@ -37,7 +39,7 @@ export function HistorySidebar({
   }, [docs, q]);
 
   return (
-    <aside className="flex h-full w-[252px] shrink-0 flex-col border-r border-hairline bg-muted/40">
+    <aside className={cn("flex h-full flex-1 flex-col", !hideOuterShell && "w-[252px] shrink-0 border-r border-hairline bg-muted/40")}>
       <div className="px-5 pt-6 pb-4">
         <h1 className="display text-[28px] leading-none">Vertor</h1>
         <p className="mt-1.5 text-[11px] italic text-muted-foreground">
