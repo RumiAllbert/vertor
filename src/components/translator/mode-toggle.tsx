@@ -1,10 +1,7 @@
 "use client";
 import * as React from "react";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Info } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export type Mode = "simple" | "advanced";
@@ -36,69 +33,69 @@ export function ModeToggle({
   onChange: (m: Mode) => void;
 }) {
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          className="inline-flex h-7 items-center gap-1.5 px-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground"
-          aria-label="Mode"
-        >
-          <span
-            className={cn(
-              "inline-block h-1.5 w-1.5 rounded-full",
-              mode === "simple" ? "bg-ink" : "bg-foreground/60",
-            )}
-          />
-          <span className="capitalize">{mode}</span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={10} className="w-[320px] p-0">
-        <button
-          onClick={() => onChange("simple")}
-          className={cn(
-            "relative block w-full border-b border-hairline px-4 py-3 text-left transition-colors",
-            mode === "simple"
-              ? "bg-ink/8"
-              : "hover:bg-foreground/[0.04]",
-          )}
-        >
-          {mode === "simple" && (
-            <span aria-hidden className="absolute left-0 top-2 bottom-2 w-px bg-ink" />
-          )}
-          <div className="flex items-baseline justify-between">
-            <span className="text-[13.5px] font-medium">Simple</span>
-            <span className="font-mono text-[10.5px] text-muted-foreground">
-              Flash Lite
+    <div
+      role="group"
+      aria-label="Model mode"
+      className="inline-flex h-7 items-center rounded-sm border border-hairline bg-background p-0.5 text-[11.5px]"
+    >
+      <SegmentButton
+        active={mode === "simple"}
+        onClick={() => onChange("simple")}
+      >
+        Simple
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="ml-1 inline-flex h-3 w-3 items-center justify-center text-muted-foreground"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Info className="h-3 w-3" />
             </span>
-          </div>
-          <p className="mt-1 text-[12px] italic leading-snug text-muted-foreground">
-            Sensible defaults. Gemini 3.1 Flash Lite handles every translation —
-            cheapest, fastest, and still fluent across long documents.
-          </p>
-        </button>
-        <button
-          onClick={() => onChange("advanced")}
-          className={cn(
-            "relative block w-full px-4 py-3 text-left transition-colors",
-            mode === "advanced"
-              ? "bg-ink/8"
-              : "hover:bg-foreground/[0.04]",
-          )}
-        >
-          {mode === "advanced" && (
-            <span aria-hidden className="absolute left-0 top-2 bottom-2 w-px bg-ink" />
-          )}
-          <div className="flex items-baseline justify-between">
-            <span className="text-[13.5px] font-medium">Advanced</span>
-            <span className="font-mono text-[10.5px] text-muted-foreground">
-              choose model
-            </span>
-          </div>
-          <p className="mt-1 text-[12px] italic leading-snug text-muted-foreground">
-            Pick any model — Gemini 3.1 Pro for nuance, Claude for literary
-            voice, GPT-5 for technical prose.
-          </p>
-        </button>
-      </PopoverContent>
-    </Popover>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-[260px] text-[11px] leading-snug italic">
+            Smart default. Gemini 3.1 Flash Lite — cheapest, fastest, fluent across long documents. Switch to Advanced to choose any model.
+          </TooltipContent>
+        </Tooltip>
+      </SegmentButton>
+      <SegmentButton
+        active={mode === "advanced"}
+        onClick={() => onChange("advanced")}
+      >
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span>Advanced</span>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-[260px] text-[11px] leading-snug italic">
+            Pick any model — Gemini 3.1 Pro for nuance, Claude for literary voice, GPT-5 for technical prose.
+          </TooltipContent>
+        </Tooltip>
+      </SegmentButton>
+    </div>
+  );
+}
+
+function SegmentButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "inline-flex h-6 items-center gap-0.5 rounded-[3px] px-2.5 transition-colors",
+        active
+          ? "bg-ink/10 text-foreground"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {children}
+    </button>
   );
 }

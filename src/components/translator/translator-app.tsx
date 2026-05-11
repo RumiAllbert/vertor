@@ -387,9 +387,9 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             instruction
           </button>
 
+          <ModeToggle mode={mode} onChange={setMode} />
+
           <div className="ml-auto flex items-center gap-2">
-            <ModeToggle mode={mode} onChange={setMode} />
-            <span className="h-5 w-px bg-hairline" />
             <ThemeToggle />
             <UserMenu session={session} />
           </div>
