@@ -39,6 +39,9 @@ export async function PATCH(
     .set({ ...parsed.data, updatedAt: new Date() })
     .where(and(eq(schema.documents.id, id), eq(schema.documents.userId, userId)))
     .returning();
+  // 404 signals "create this on the next pass" to CloudDocStore — without it
+  // the client thinks the save succeeded and never POSTs.
+  if (!row) return new Response("not found", { status: 404 });
   return Response.json({ document: row });
 }
 

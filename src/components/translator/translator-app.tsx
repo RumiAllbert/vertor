@@ -359,37 +359,47 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     ? neighborhood(doc.translatedText, selection.start, selection.end)
     : "";
 
-  // Editable translation pane: keep the DOM uncontrolled so the user's caret
-  // doesn't jump on every render. We imperatively sync only when an EXTERNAL
-  // change diverges from the DOM (streaming, variation applied, doc opened).
-  // While the popover is open over a selection, we replace the content with
-  // marked HTML so the selected range stays visually highlighted; we restore
-  // plain text the moment the popover closes.
+  // Editable translation pane. We imperatively sync state -> DOM only when
+  // an EXTERNAL change diverges from the DOM (streaming, variation applied,
+  // doc opened) so the user's caret doesn't jump on every render.
+  //
+  // We use textContent (not innerText/innerHTML) so the editable surface is
+  // always a single text node — that's what makes selection offsets line up
+  // with doc.translatedText string indexing (which is what applyReplacement
+  // uses to splice). Combined with onKeyDown intercepting Enter to insert a
+  // literal '\n', the contentEditable never accumulates <br>/<div> wrappers
+  // that would throw offsets off.
   React.useEffect(() => {
     const el = translationRef.current;
     if (!el) return;
-
-    if (popoverOpen && selection) {
-      const html =
-        escapeHtml(doc.translatedText.slice(0, selection.start)) +
-        '<mark data-vertor-mark class="rounded-sm bg-ink/15 px-0.5 text-foreground">' +
-        escapeHtml(doc.translatedText.slice(selection.start, selection.end)) +
-        "</mark>" +
-        escapeHtml(doc.translatedText.slice(selection.end));
-      if (el.innerHTML !== html) el.innerHTML = html;
-      return;
+    if (el.textContent !== doc.translatedText) {
+      el.textContent = doc.translatedText;
     }
-
-    if (el.innerText !== doc.translatedText) {
-      el.innerText = doc.translatedText;
-    }
-  }, [doc.translatedText, popoverOpen, selection]);
+  }, [doc.translatedText]);
 
   const onTranslationInput = (e: React.FormEvent<HTMLDivElement>) => {
-    // Edits are only allowed when no popover/highlight is up, but guard anyway.
     if (popoverOpen) return;
-    const next = e.currentTarget.innerText;
+    const next = e.currentTarget.textContent ?? "";
     setDoc((d) => ({ ...d, translatedText: next, updatedAt: Date.now() }));
+  };
+
+  const onTranslationKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Force Enter to insert a literal '\n' character instead of the browser's
+    // default block-level wrapping. Keeps the content a single text node.
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      const sel = window.getSelection();
+      if (!sel?.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const newline = document.createTextNode("\n");
+      range.insertNode(newline);
+      range.setStartAfter(newline);
+      range.setEndAfter(newline);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      e.currentTarget.dispatchEvent(new Event("input", { bubbles: true }));
+    }
   };
 
   const onTranslationPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
@@ -625,6 +635,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                 spellCheck
                 onMouseUp={onTranslationMouseUp}
                 onInput={onTranslationInput}
+                onKeyDown={onTranslationKeyDown}
                 onPaste={onTranslationPaste}
                 className="editor-surface select-text whitespace-pre-wrap px-10 pt-7 pb-10 outline-none"
               />
@@ -745,15 +756,6 @@ function timeAgo(ts: number): string {
 }
 
 /* helpers */
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
 
 function wordCount(text: string) {
   return text.trim() ? text.trim().split(/\s+/).length : 0;

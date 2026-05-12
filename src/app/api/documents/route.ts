@@ -7,6 +7,10 @@ import { desc, eq } from "drizzle-orm";
 export const runtime = "nodejs";
 
 const PostBody = z.object({
+  // Client-supplied id (nanoid). When absent, the server generates one.
+  // Keeping the client id stable across the document's lifetime is what
+  // lets subsequent PATCH calls find the row.
+  id: z.string().min(1).optional(),
   title: z.string().default("Untitled"),
   sourceText: z.string().default(""),
   translatedText: z.string().default(""),
@@ -46,9 +50,10 @@ export async function POST(req: NextRequest) {
   const parsed = PostBody.safeParse(await req.json());
   if (!parsed.success) return new Response(parsed.error.message, { status: 400 });
 
+  const { id, ...rest } = parsed.data;
   const [row] = await db
     .insert(schema.documents)
-    .values({ ...parsed.data, userId })
+    .values({ id: id ?? crypto.randomUUID(), userId, ...rest })
     .returning();
   return Response.json({ document: row });
 }

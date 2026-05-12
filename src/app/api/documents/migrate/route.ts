@@ -10,6 +10,9 @@ const Body = z.object({
   docs: z
     .array(
       z.object({
+        // Preserve the client id when migrating so the original local
+        // document maps cleanly to its cloud row.
+        id: z.string().min(1).optional(),
         title: z.string().default("Untitled"),
         sourceText: z.string().default(""),
         translatedText: z.string().default(""),
@@ -36,6 +39,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return new Response(parsed.error.message, { status: 400 });
 
   const rows = parsed.data.docs.map((d) => ({
+    id: d.id ?? crypto.randomUUID(),
     userId,
     title: d.title,
     sourceText: d.sourceText,

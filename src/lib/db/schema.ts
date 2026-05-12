@@ -4,7 +4,6 @@ import {
   timestamp,
   primaryKey,
   integer,
-  uuid,
   jsonb,
 } from "drizzle-orm/pg-core";
 import type { AdapterAccountType } from "next-auth/adapters";
@@ -69,8 +68,13 @@ export const verificationTokens = pgTable(
   (vt) => [primaryKey({ columns: [vt.identifier, vt.token] })],
 );
 
+// document.id is `text` rather than `uuid` so the client can supply its own
+// nanoid-style ids on POST. This keeps client state and server state in sync
+// across a single document's lifetime — without a text id, a PATCH that
+// doesn't match falls back to POST, which would otherwise mint a fresh
+// server-side UUID and leave the client referencing the old id forever.
 export const documents = pgTable("document", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  id: text("id").primaryKey(),
   userId: text("userId").references(() => users.id, { onDelete: "cascade" }),
   title: text("title").notNull().default("Untitled"),
   sourceText: text("sourceText").notNull().default(""),

@@ -50,10 +50,13 @@ export class CloudDocStore implements DocStore {
       }),
     });
     if (patchRes.status === 404 || patchRes.status === 401) {
+      // Include the client id so the server creates the row with the same
+      // identifier the client is tracking — subsequent PATCH calls will hit.
       await this.fetcher("/api/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: doc.id,
           title: doc.title,
           sourceText: doc.sourceText,
           translatedText: doc.translatedText,
