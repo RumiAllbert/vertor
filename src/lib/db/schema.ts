@@ -5,6 +5,7 @@ import {
   primaryKey,
   integer,
   jsonb,
+  index,
 } from "drizzle-orm/pg-core";
 import type { AdapterAccountType } from "next-auth/adapters";
 
@@ -88,3 +89,28 @@ export const documents = pgTable("document", {
 
 export type Document = typeof documents.$inferSelect;
 export type NewDocument = typeof documents.$inferInsert;
+
+export type RevisionKind = "translated" | "variation" | "edit" | "restored";
+
+export const revisions = pgTable(
+  "revision",
+  {
+    id: text("id").primaryKey(),
+    documentId: text("documentId")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    ts: timestamp("ts", { mode: "date" }).defaultNow().notNull(),
+    kind: text("kind").$type<RevisionKind>().notNull(),
+    modelId: text("modelId"),
+    summary: text("summary"),
+    sourceText: text("sourceText").notNull(),
+    translatedText: text("translatedText").notNull(),
+  },
+  (table) => [index("revision_doc_ts_idx").on(table.documentId, table.ts.desc())],
+);
+
+export type Revision = typeof revisions.$inferSelect;
+export type NewRevision = typeof revisions.$inferInsert;
