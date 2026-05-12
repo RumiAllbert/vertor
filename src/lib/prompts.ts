@@ -17,6 +17,17 @@ export function translationSystem(targetLang: string, instruction?: string) {
   return base.join("\n");
 }
 
+export function titleSystem() {
+  return [
+    "Generate a short, evocative title for the following text.",
+    "The title MUST be in the same language as the text itself.",
+    "Maximum 6 words. No quotation marks, no trailing punctuation.",
+    "Title-case for English; sentence-case for other languages.",
+    "If the text is too short or fragmentary to title, return: Untitled",
+    "Return ONLY the title — no commentary, no prefix, no quotes.",
+  ].join("\n");
+}
+
 export function detectionSystem() {
   return [
     `Identify the language of the input.`,

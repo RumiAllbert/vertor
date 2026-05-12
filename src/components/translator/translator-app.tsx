@@ -11,7 +11,6 @@ import { ModeToggle, useMode } from "./mode-toggle";
 import { SIMPLE_MODE_MODEL_ID } from "@/lib/models";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  deriveTitle,
   newLocalDoc,
   type LocalDoc,
   LocalDocStore,
@@ -68,6 +67,11 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const translationRef = React.useRef<HTMLDivElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const abortRef = React.useRef<AbortController | null>(null);
+  // True when the title was either set by the user (typed into the input) or
+  // loaded from history (an intentional title from a previous session). When
+  // true, auto-title generation is skipped.
+  const titleLockedRef = React.useRef(false);
+  const titleAbortRef = React.useRef<AbortController | null>(null);
 
   const store: DocStore = React.useMemo(
     () => (session.user ? new CloudDocStore() : new LocalDocStore()),
@@ -81,12 +85,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   React.useEffect(() => {
     if (!doc.sourceText.trim() && !doc.translatedText.trim()) return;
     const t = setTimeout(async () => {
-      const updated: LocalDoc = {
-        ...doc,
-        title: doc.title === "Untitled" && doc.sourceText ? deriveTitle(doc.sourceText) : doc.title,
-        updatedAt: Date.now(),
-      };
-      await store.save(updated);
+      await store.save({ ...doc, updatedAt: Date.now() });
       setDocs(await store.list());
     }, 600);
     return () => clearTimeout(t);
@@ -113,6 +112,36 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   }, [mode, doc.modelId]);
 
   const effectiveModelId = mode === "simple" ? SIMPLE_MODE_MODEL_ID : doc.modelId;
+
+  // Auto-title — after the source text settles, ask Flash Lite for a short
+  // title in the source language. Skip if the user has touched the title.
+  React.useEffect(() => {
+    if (titleLockedRef.current) return;
+    const text = doc.sourceText.trim();
+    if (text.length < 40) return;
+
+    const t = setTimeout(async () => {
+      titleAbortRef.current?.abort();
+      const controller = new AbortController();
+      titleAbortRef.current = controller;
+      try {
+        const res = await fetch("/api/title", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({ source: doc.sourceText }),
+        });
+        if (!res.ok) return;
+        const { title } = (await res.json()) as { title: string };
+        if (!title || titleLockedRef.current) return;
+        setDoc((d) => (d.id !== doc.id ? d : { ...d, title, updatedAt: Date.now() }));
+      } catch {
+        // Aborted or network error — silently drop; title stays "Untitled".
+      }
+    }, 2500);
+
+    return () => clearTimeout(t);
+  }, [doc.sourceText, doc.id]);
 
   // Migration: when signed in, check for local docs to offer moving to the cloud.
   const [pendingLocalDocs, setPendingLocalDocs] = React.useState<LocalDoc[]>([]);
@@ -147,6 +176,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
       sourceLang: doc.sourceLang,
       modelId: doc.modelId,
     });
+    titleLockedRef.current = false;
     setDoc(fresh);
     setDetectedLang(null);
     setGlobalInstruction("");
@@ -155,6 +185,8 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const openDocument = (id: string) => {
     const found = docs.find((d) => d.id === id);
     if (found) {
+      // Existing docs have intentional titles — don't auto-overwrite them.
+      titleLockedRef.current = true;
       setDoc(found);
       setDetectedLang(null);
       setSelection(null);
@@ -354,7 +386,10 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
           <input
             value={doc.title}
-            onChange={(e) => updateDoc({ title: e.target.value })}
+            onChange={(e) => {
+              titleLockedRef.current = true;
+              updateDoc({ title: e.target.value });
+            }}
             className="display min-w-0 flex-1 bg-transparent px-1 text-[20px] leading-none outline-none placeholder:italic placeholder:text-muted-foreground"
             placeholder="Untitled"
           />

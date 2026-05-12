@@ -6,25 +6,15 @@ import { SoftAurora } from "./soft-aurora";
 
 /* --------------------------------- Intro ---------------------------------
  *
- * The wordmark cycles through translations of "to translate" before settling
- * on "Vertor". Visit-once via sessionStorage; respects prefers-reduced-motion.
- *
- * The cycle is paced like a slowing wheel: the early frames flick by, the
- * later ones linger, and Vertor lands with a scale + letter-spacing collapse.
+ * Aurora-only opening — about a second and a half — then the wordmark
+ * settles in and the supporting lines cascade beneath it. Plays once per
+ * session; respects prefers-reduced-motion (snaps to the composed state).
  * --------------------------------------------------------------------- */
 
-const FIRST_WORD = "vertere";
-const CYCLE: { word: string; at: number }[] = [
-  { word: "traduire",   at: 130 },
-  { word: "übersetzen", at: 260 },
-  { word: "翻訳",        at: 390 },
-  { word: "перевод",    at: 530 },
-  { word: "traducción", at: 700 },
-];
-const SETTLE_AT = 880; // wordmark lands on "Vertor" and supporting elements blur-up
+const INITIAL_DELAY = 1500; // aurora-only pause before the cascade begins
 const INTRO_FLAG = "vertor.intro.shown";
 
-type Phase = "playing" | "done";
+type Phase = "waiting" | "done";
 
 // useLayoutEffect runs before paint on the client (so we can decide play-vs-
 // skip without flicker), but warns if used during SSR. Standard isomorphic
@@ -35,14 +25,13 @@ const useIsoLayoutEffect =
 export function Hero({ authEnabled }: { authEnabled: boolean }) {
   const sectionRef = React.useRef<HTMLElement>(null);
 
-  // Initial state must match between SSR and the first client render:
-  //   • "done" + "Vertor" so SSR HTML / no-JS users get the fully composed
-  //     hero with the normal blur-up cascade.
-  //   • If JS decides to play the intro, useIsoLayoutEffect synchronously
-  //     flips state to "playing"/"vertere" before the browser paints, so
-  //     the user only ever sees the intro start state — no flash of "done".
+  // Initial state matches between SSR and the first client render:
+  //   • "done" so SSR HTML / no-JS users get the fully composed hero with
+  //     the normal blur-up cascade.
+  //   • If JS decides to play the intro, useIsoLayoutEffect flips state to
+  //     "waiting" before the browser paints — the user only ever sees the
+  //     waiting state, no flash of "done".
   const [phase, setPhase] = React.useState<Phase>("done");
-  const [word, setWord] = React.useState("Vertor");
 
   useIsoLayoutEffect(() => {
     let skip = false;
@@ -51,33 +40,21 @@ export function Hero({ authEnabled }: { authEnabled: boolean }) {
       const seen = sessionStorage.getItem(INTRO_FLAG) === "1";
       skip = Boolean(reduced) || seen;
     } catch {
-      // If sessionStorage is unavailable (e.g., third-party cookie blockers),
-      // err on the side of playing the intro — it's lightweight.
+      // If sessionStorage is unavailable, err on the side of playing.
     }
 
-    if (skip) return; // stay at the SSR "done" state — animations cascade normally
+    if (skip) return; // SSR "done" state already shows the full hero.
 
-    setWord(FIRST_WORD);
-    setPhase("playing");
+    setPhase("waiting");
 
-    const cycleTimers = CYCLE.map((c) =>
-      setTimeout(() => setWord(c.word), c.at),
-    );
-    const settleTimer = setTimeout(() => {
-      setWord("Vertor");
-      // Phase flips to "done" simultaneously — supporting elements start
-      // their blur-up cascade while the wordmark's settle animation is
-      // still finishing, so the whole composition arrives in one breath.
+    const revealTimer = setTimeout(() => {
       setPhase("done");
       try {
         sessionStorage.setItem(INTRO_FLAG, "1");
       } catch {}
-    }, SETTLE_AT);
+    }, INITIAL_DELAY);
 
-    return () => {
-      cycleTimers.forEach(clearTimeout);
-      clearTimeout(settleTimer);
-    };
+    return () => clearTimeout(revealTimer);
   }, []);
 
   /* ----- Scroll-bound fade — drives --scroll-out via rAF, no re-renders. */
@@ -100,21 +77,14 @@ export function Hero({ authEnabled }: { authEnabled: boolean }) {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // Supporting elements (eyebrow, hairline, tagline, CTAs) keep their
-  // blur-up animations paused until the intro finishes, then resume in
-  // cascade. animation-delay is paused along with play-state, so each
-  // element's delay counts down from the moment phase becomes "done".
+  // Supporting elements keep their blur-up animations paused until the
+  // aurora opening ends, then resume in cascade. animation-delay is paused
+  // along with play-state, so each element's delay counts down from the
+  // moment phase becomes "done".
   const blurUpStyle = (delayMs: number): React.CSSProperties => ({
     animationPlayState: phase === "done" ? "running" : "paused",
     animationDelay: `${delayMs}ms`,
   });
-
-  // Wordmark animation class — keyed on `word` so each frame remounts:
-  //   • cycle frames (vertere, traduire, …) → fast blur-flick
-  //   • final frame ("Vertor") → slower settle with letter-spacing collapse
-  // The settle also runs on the skip-case mount, so users who've already seen
-  // the intro still get a small dignified entrance instead of a hard snap.
-  const wordmarkAnim = word === "Vertor" ? "wordmark-settle" : "wordmark-cycle";
 
   return (
     <section
@@ -161,27 +131,24 @@ export function Hero({ authEnabled }: { authEnabled: boolean }) {
           transformOrigin: "center 45%",
         }}
       >
-        {/* Editorial eyebrow */}
-        <p className="blur-up small-caps mb-8" style={blurUpStyle(0)}>
-          An editorial workspace
-        </p>
-
-        {/* Wordmark — keyed on `word` so each cycle frame remounts and the
-            CSS animation fires fresh. */}
+        {/* Wordmark — during the aurora-only opening it's mounted but at
+            opacity 0 so its layout height stays reserved. When phase flips
+            to "done" the .wordmark-settle keyframe runs (420ms scale +
+            letter-spacing collapse). */}
         <h1
-          key={word}
           className={cn(
             "display wordmark-crisp text-[22vw] leading-[0.85] tracking-[-0.02em] md:text-[200px] md:leading-[0.85]",
-            wordmarkAnim,
+            phase === "done" && "wordmark-settle",
           )}
+          style={phase === "waiting" ? { opacity: 0 } : undefined}
         >
-          {word}
+          Vertor
         </h1>
 
         {/* Hairline rule, framed by the Latin gloss */}
         <div
           className="blur-up mt-10 flex w-full max-w-[760px] items-center gap-5 px-4"
-          style={blurUpStyle(140)}
+          style={blurUpStyle(180)}
         >
           <span aria-hidden className="h-px flex-1 bg-hairline/70" />
           <p className="display subtext-crisp whitespace-nowrap text-[18px] italic text-foreground/90 md:text-[22px]">
@@ -195,7 +162,7 @@ export function Hero({ authEnabled }: { authEnabled: boolean }) {
         {/* Plain-prose tagline */}
         <p
           className="blur-up subtext-crisp mt-6 max-w-[44ch] text-[17px] font-medium text-foreground/85 md:text-[19px]"
-          style={blurUpStyle(240)}
+          style={blurUpStyle(360)}
         >
           A workspace for translators, writers, and editors.
         </p>
@@ -203,7 +170,7 @@ export function Hero({ authEnabled }: { authEnabled: boolean }) {
         {/* CTAs */}
         <div
           className="blur-up mt-10 flex flex-col items-center gap-4 sm:flex-row sm:gap-7"
-          style={blurUpStyle(340)}
+          style={blurUpStyle(540)}
         >
           <Link
             href="/app"
