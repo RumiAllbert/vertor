@@ -1,0 +1,1 @@
+Vertor social card with an aurora background and a two-pane translation workspace preview.

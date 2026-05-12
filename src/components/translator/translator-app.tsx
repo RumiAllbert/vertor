@@ -323,7 +323,10 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
       return;
     }
     const text = sel.toString().trim();
-    if (!text) {
+    // Reject empty, whitespace-only, or punctuation-only selections. A
+    // valid selection must contain at least one letter or digit (any
+    // script). Stops clicks on " ", ",", "—", etc. from triggering the chip.
+    if (!text || !/[\p{L}\p{N}]/u.test(text)) {
       setSelection(null);
       return;
     }
@@ -583,7 +586,17 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                 onMouseUp={onTranslationMouseUp}
                 className="editor-surface select-text whitespace-pre-wrap px-10 pt-7 pb-10 outline-none"
               >
-                {doc.translatedText}
+                {selection ? (
+                  <>
+                    {doc.translatedText.slice(0, selection.start)}
+                    <mark className="rounded-sm bg-ink/15 px-0.5 text-foreground">
+                      {doc.translatedText.slice(selection.start, selection.end)}
+                    </mark>
+                    {doc.translatedText.slice(selection.end)}
+                  </>
+                ) : (
+                  doc.translatedText
+                )}
                 {translating && (
                   <span className="caret ml-0.5 inline-block h-[0.95em] w-[2px] bg-ink align-text-bottom" />
                 )}
