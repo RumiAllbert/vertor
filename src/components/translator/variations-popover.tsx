@@ -28,6 +28,9 @@ export function VariationsPopover(props: Props) {
 
   const [variations, setVariations] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(false);
+  // When loading because of a "more like this" click, remember which row
+  // triggered it so we can show a subtle inline state there.
+  const [basedOnIndex, setBasedOnIndex] = React.useState<number | null>(null);
   const [instruction, setInstruction] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
 
@@ -35,33 +38,45 @@ export function VariationsPopover(props: Props) {
     if (open) {
       setVariations([]);
       setError(null);
+      setBasedOnIndex(null);
     }
   }, [open, selection]);
 
-  const fetchVariations = React.useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/variations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          selection, sourceContext, translationContext,
-          sourceLang, targetLang, modelId, kind, instruction,
-        }),
-      });
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t || `HTTP ${res.status}`);
+  const fetchVariations = React.useCallback(
+    async (basedOn?: string, basedIdx?: number) => {
+      setLoading(true);
+      setBasedOnIndex(basedIdx ?? null);
+      setError(null);
+      try {
+        const res = await fetch("/api/variations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            selection, sourceContext, translationContext,
+            sourceLang, targetLang, modelId, kind, instruction,
+            ...(basedOn ? { basedOn } : {}),
+          }),
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(t || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { variations: string[] };
+        setVariations(data.variations);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed");
+      } finally {
+        setLoading(false);
+        setBasedOnIndex(null);
       }
-      const data = (await res.json()) as { variations: string[] };
-      setVariations(data.variations);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setLoading(false);
-    }
-  }, [selection, sourceContext, translationContext, sourceLang, targetLang, modelId, kind, instruction]);
+    },
+    [selection, sourceContext, translationContext, sourceLang, targetLang, modelId, kind, instruction],
+  );
+
+  // "More like this" is only meaningful for phrase/paragraph/document.
+  // For a single word, variants are inherently different word choices —
+  // there's not much "style" to base further variations on.
+  const canSimilars = kind !== "word";
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -77,7 +92,7 @@ export function VariationsPopover(props: Props) {
         side="bottom"
         align="start"
         sideOffset={10}
-        className="w-[440px] overflow-hidden border-hairline p-0"
+        className="w-[460px] overflow-hidden border-hairline p-0"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <div className="flex items-baseline justify-between gap-3 border-b border-hairline px-4 py-2.5">
@@ -97,11 +112,11 @@ export function VariationsPopover(props: Props) {
           />
           <div className="flex items-center justify-between gap-3">
             <button
-              onClick={fetchVariations}
+              onClick={() => fetchVariations()}
               disabled={loading}
               className="inline-flex items-center gap-2 text-[12px] text-foreground transition-colors hover:text-ink disabled:opacity-50"
             >
-              <span className="font-mono text-[11px]">{loading ? "…" : "→"}</span>
+              <span className="font-mono text-[11px]">{loading && basedOnIndex === null ? "…" : "→"}</span>
               {variations.length ? "Regenerate" : "Suggest three"}
             </button>
             {kind !== "document" && instruction.trim() && (
@@ -124,22 +139,62 @@ export function VariationsPopover(props: Props) {
 
         {variations.length > 0 && (
           <div className="border-t border-hairline">
-            {variations.map((v, i) => (
-              <button
-                key={i}
-                onClick={() => onApply(v)}
-                className={cn(
-                  "group block w-full px-4 py-3 text-left transition-colors hover:bg-[color-mix(in_oklch,var(--ink)_6%,transparent)]",
-                  i > 0 && "border-t border-hairline",
-                )}
-              >
-                <div className="flex items-baseline gap-2 text-[10.5px] text-muted-foreground">
-                  <span className="font-mono">{String(i + 1).padStart(2, "0")}</span>
-                  <span className="font-mono opacity-50 transition-opacity group-hover:opacity-100">↵</span>
+            {variations.map((v, i) => {
+              const isSourceOfSimilars = loading && basedOnIndex === i;
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    "group relative w-full px-4 py-3 transition-colors",
+                    i > 0 && "border-t border-hairline",
+                    isSourceOfSimilars
+                      ? "bg-ink/[0.06]"
+                      : "hover:bg-[color-mix(in_oklch,var(--ink)_5%,transparent)]",
+                  )}
+                >
+                  {/* Primary action — click anywhere on the body to apply */}
+                  <button
+                    type="button"
+                    onClick={() => onApply(v)}
+                    disabled={loading}
+                    className="block w-full text-left disabled:cursor-not-allowed"
+                  >
+                    <div className="flex items-baseline gap-2 text-[10.5px] text-muted-foreground">
+                      <span className="font-mono">{String(i + 1).padStart(2, "0")}</span>
+                      <span className="font-mono opacity-50 transition-opacity group-hover:opacity-100">↵</span>
+                    </div>
+                    <div className="mt-1 pr-20 font-serif text-[14px] leading-snug">{v}</div>
+                  </button>
+
+                  {/* Secondary action — "more like this", iterates on this variation's tone.
+                      Only shown for phrase/paragraph/document; word-level variations don't
+                      have meaningful "style" to base further suggestions on. */}
+                  {canSimilars && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fetchVariations(v, i);
+                      }}
+                      disabled={loading}
+                      className={cn(
+                        "absolute right-3 top-3 text-[10px] italic text-muted-foreground transition-colors",
+                        "hover:text-ink disabled:cursor-not-allowed disabled:opacity-50",
+                      )}
+                      title="Generate three more in this register"
+                    >
+                      {isSourceOfSimilars ? (
+                        <span className="font-mono">…</span>
+                      ) : (
+                        <>
+                          <span className="font-mono opacity-60">↺</span> more like this
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
-                <div className="mt-1 font-serif text-[14px] leading-snug">{v}</div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </PopoverContent>

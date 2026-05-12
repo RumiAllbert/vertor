@@ -42,6 +42,7 @@ export function variationsSystem(opts: {
   sourceLang: string;
   targetLang: string;
   instruction?: string;
+  basedOn?: string;
 }) {
   const target = languageName(opts.targetLang);
   const source = opts.sourceLang === "auto" ? "the source text" : languageName(opts.sourceLang);
@@ -62,6 +63,15 @@ export function variationsSystem(opts: {
     `Each alternative should fit grammatically into the surrounding translation.`,
     `Return ONLY the alternatives. No commentary, no numbering, no quotes.`,
   ];
+  if (opts.basedOn?.trim()) {
+    lines.push(
+      `Base the three new alternatives on the style and register of THIS example, ` +
+        `keeping the same voice, tone, and rhythm but offering meaningfully different ` +
+        `word choices and phrasing:`,
+      `Example: ${opts.basedOn.trim()}`,
+      `Do not return this exact example back; produce three distinct variations in its spirit.`,
+    );
+  }
   if (opts.instruction?.trim()) {
     lines.push(`Additional user instruction: ${opts.instruction.trim()}`);
   }

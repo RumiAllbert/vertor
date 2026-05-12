@@ -17,6 +17,8 @@ const Body = z.object({
   modelId: z.string().default(DEFAULT_MODEL_ID),
   kind: z.enum(["word", "phrase", "paragraph", "document"]),
   instruction: z.string().optional(),
+  // If set, the model produces 3 NEW variations in the spirit of basedOn.
+  basedOn: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -24,7 +26,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return new Response(JSON.stringify({ error: parsed.error.message }), { status: 400 });
   }
-  const { selection, sourceContext, translationContext, sourceLang, targetLang, modelId, kind, instruction } =
+  const { selection, sourceContext, translationContext, sourceLang, targetLang, modelId, kind, instruction, basedOn } =
     parsed.data;
 
   const userPrompt = [
@@ -40,7 +42,7 @@ export async function POST(req: NextRequest) {
 
   const { object } = await generateObject({
     model: resolveModel(modelId),
-    system: variationsSystem({ kind: kind as VariationKind, sourceLang, targetLang, instruction }),
+    system: variationsSystem({ kind: kind as VariationKind, sourceLang, targetLang, instruction, basedOn }),
     prompt: userPrompt,
     temperature: 0.8,
     schema: z.object({
