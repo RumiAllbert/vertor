@@ -20,6 +20,14 @@ export function MarketingHeader({ session }: { session: SessionInfo }) {
             Sign in
           </a>
         )}
+        {session.user && (
+          <Link
+            href="/dashboard"
+            className="text-muted-foreground underline decoration-hairline decoration-1 underline-offset-[6px] transition-colors hover:text-foreground hover:decoration-ink"
+          >
+            Dashboard
+          </Link>
+        )}
         <Link
           href="/app"
           className="text-foreground underline decoration-hairline decoration-1 underline-offset-[6px] transition-colors hover:decoration-ink"

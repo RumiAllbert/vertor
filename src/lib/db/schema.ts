@@ -5,8 +5,16 @@ import {
   primaryKey,
   integer,
   uuid,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import type { AdapterAccountType } from "next-auth/adapters";
+
+export type PersonalityValue = {
+  title: string;
+  blurb: string;
+  traits: [string, string, string];
+  generatedAt: string;
+};
 
 export const users = pgTable("user", {
   id: text("id")
@@ -17,6 +25,8 @@ export const users = pgTable("user", {
   emailVerified: timestamp("emailVerified", { mode: "date" }),
   image: text("image"),
   createdAt: timestamp("createdAt", { mode: "date" }).defaultNow().notNull(),
+  personality: jsonb("personality").$type<PersonalityValue | null>(),
+  personalityDocCount: integer("personalityDocCount").notNull().default(0),
 });
 
 export const accounts = pgTable(
