@@ -17,9 +17,11 @@
 /.next/
 /out/
 
+
 # production
 /build
 docs/
+/docs
 # misc
 .DS_Store
 *.pem
