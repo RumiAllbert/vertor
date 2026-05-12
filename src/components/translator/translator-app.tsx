@@ -640,13 +640,6 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                 onPaste={onTranslationPaste}
                 className="editor-surface select-text whitespace-pre-wrap px-10 pt-7 pb-10 outline-none"
               />
-              {translating && (
-                <span
-                  aria-hidden
-                  className="caret pointer-events-none absolute h-[1.05em] w-[2px] bg-ink"
-                  style={{ left: 32, top: 24 }}
-                />
-              )}
 
               {selection && !popoverOpen && (
                 <button
