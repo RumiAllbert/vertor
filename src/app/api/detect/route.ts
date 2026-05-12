@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { generateText } from "ai";
 import { z } from "zod";
+import { resolveModel } from "@/lib/model-client";
 import { detectionSystem } from "@/lib/prompts";
 
 export const runtime = "nodejs";
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest) {
   const sample = parsed.data.text.slice(0, 1500);
 
   const { text } = await generateText({
-    model: "google/gemini-3.1-flash-lite-preview",
+    model: resolveModel("gemini-3.1-flash-lite-preview"),
     system: detectionSystem(),
     prompt: sample,
     temperature: 0,
