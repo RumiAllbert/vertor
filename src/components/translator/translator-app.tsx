@@ -23,6 +23,7 @@ import type { VariationKind } from "@/lib/prompts";
 import { cn } from "@/lib/utils";
 import { captureRevision, listRevisions, truncate } from "@/lib/revisions";
 import type { Revision } from "@/lib/db/schema";
+import { HistoryPanel } from "./history-panel";
 
 type SelectionInfo = {
   text: string;
@@ -645,6 +646,19 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             instruction
           </button>
 
+          <button
+            onClick={() => setHistoryOpen((o) => !o)}
+            disabled={!session.user}
+            title={session.user ? undefined : "Sign in to enable history"}
+            className={cn(
+              "h-8 text-[12px] transition-colors",
+              historyOpen ? "text-ink" : "text-muted-foreground hover:text-foreground",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+            )}
+          >
+            history
+          </button>
+
           <ModeToggle mode={mode} onChange={setMode} />
 
           <div className="ml-auto flex items-center gap-2">
@@ -794,6 +808,18 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           </span>
         </footer>
       </main>
+
+      {historyOpen && session.user && (
+        <HistoryPanel
+          revisions={revisions}
+          selectedRevisionId={selectedRevision?.id ?? null}
+          onSelect={setSelectedRevision}
+          onClose={() => {
+            setHistoryOpen(false);
+            setSelectedRevision(null);
+          }}
+        />
+      )}
     </div>
   );
 }
