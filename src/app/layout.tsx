@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Instrument_Sans, Source_Serif_4, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { OG_ALT, SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from "@/lib/brand-metadata";
 import "./globals.css";
 
 const instrumentSerif = Instrument_Serif({
@@ -29,14 +30,54 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vertor — Translate. Refine. Ship.",
-  description:
-    "A modern translation workspace for writers and editors. Stream translations, refine word-by-word with AI variations, export anywhere.",
-  metadataBase: new URL("https://vertor.vercel.app"),
+  applicationName: SITE_NAME,
+  title: {
+    default: SITE_TITLE,
+    template: `%s — ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  metadataBase: new URL(SITE_URL),
+  alternates: {
+    canonical: "/",
+  },
+  keywords: [
+    "literary translation",
+    "AI translation workspace",
+    "translation editor",
+    "prose translation",
+    "translator tool",
+    "AI writing editor",
+    "multilingual writing",
+  ],
+  authors: [{ name: "Rumi Allbert", url: "https://rumiallbert.com/" }],
+  creator: "Rumi Allbert",
+  publisher: SITE_NAME,
   openGraph: {
-    title: "Vertor",
-    description: "A modern translation workspace for writers and editors.",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: "/",
+    siteName: SITE_NAME,
     type: "website",
+    locale: "en_US",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: OG_ALT,
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [
+      {
+        url: "/twitter-image",
+        alt: OG_ALT,
+      },
+    ],
   },
 };
 

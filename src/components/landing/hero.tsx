@@ -5,16 +5,17 @@ import { SoftAurora } from "./soft-aurora";
 
 /* The intro orchestration is entirely CSS-driven — the marketing layout's
  * inline script adds `.vertor-intro` to <html> *before* the browser paints
- * on first visit, and the rules in globals.css handle the rest:
+ * (unless prefers-reduced-motion), and the rules in globals.css handle the
+ * rest. Plays on every visit to the landing page:
  *
  *   t=0      Aurora visible. Wordmark + supporting lines pinned at the
  *            `from` state of their respective animations (invisible).
- *   t=1500   .intro-wordmark begins — wordmark settles with a 720ms
+ *   t=2500   .intro-wordmark begins — wordmark settles with a 720ms
  *            blur/scale/letter-spacing collapse.
- *   t=1750   .intro-cascade-1 (hairline + Latin gloss) blurs up.
- *   t=2150   .intro-typewriter (tagline) types out left-to-right.
- *   t=2500   .intro-cascade-2 (CTAs) blur up.
- *   t=~3250  Fully composed.
+ *   t=2750   .intro-cascade-1 (hairline + Latin gloss) blurs up.
+ *   t=3150   .intro-typewriter (tagline) types out left-to-right.
+ *   t=3500   .intro-cascade-2 (CTAs) blur up.
+ *   t=~4250  Fully composed.
  *
  * This file just renders the structure and class names. */
 

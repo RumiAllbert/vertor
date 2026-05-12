@@ -27,7 +27,9 @@ type SelectionInfo = {
   start: number;
   end: number;
   kind: VariationKind;
-  rect: DOMRect;
+  // Plain rect snapshot in viewport coordinates so it survives state updates
+  // and can be used with position: fixed anywhere in the DOM.
+  rect: { top: number; left: number; right: number; bottom: number; width: number; height: number };
 };
 
 const CONTEXT_RADIUS = 240;
@@ -61,7 +63,6 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const [showInstruction, setShowInstruction] = React.useState(false);
 
   const [selection, setSelection] = React.useState<SelectionInfo | null>(null);
-  const [popoverAnchor, setPopoverAnchor] = React.useState<{ top: number; left: number } | null>(null);
   const [popoverOpen, setPopoverOpen] = React.useState(false);
 
   const translationRef = React.useRef<HTMLDivElement>(null);
@@ -328,16 +329,21 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     }
     const { start, end } = absoluteOffsets(node, range);
     const kind = classifySelection(doc.translatedText, start, end);
-    const rect = range.getBoundingClientRect();
+
+    // Take a viewport-space snapshot of the selection so the chip and the
+    // popover trigger can live anywhere in the DOM tree — we'll render them
+    // with position: fixed against the viewport.
+    const r = range.getBoundingClientRect();
+    const rect = {
+      top: r.top,
+      left: r.left,
+      right: r.right,
+      bottom: r.bottom,
+      width: r.width,
+      height: r.height,
+    };
 
     setSelection({ text, start, end, kind, rect });
-    const containerRect = containerRef.current?.getBoundingClientRect();
-    if (containerRect) {
-      setPopoverAnchor({
-        top: rect.bottom - containerRect.top + 4,
-        left: rect.left - containerRect.left,
-      });
-    }
   };
 
   const showVariations = () => {
@@ -586,10 +592,10 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
               {selection && !popoverOpen && (
                 <button
                   onClick={showVariations}
-                  className="absolute z-10 inline-flex items-center gap-1.5 border border-foreground bg-background px-2.5 py-1 text-[11px] tracking-tight text-foreground shadow-[2px_2px_0_var(--ink)] transition-transform hover:translate-x-[-1px] hover:translate-y-[-1px]"
+                  className="fixed z-50 inline-flex items-center gap-1.5 border border-foreground bg-background px-2.5 py-1 text-[11px] tracking-tight text-foreground shadow-[2px_2px_0_var(--ink)] transition-transform hover:translate-x-[-1px] hover:translate-y-[-1px]"
                   style={{
-                    top: (popoverAnchor?.top ?? 0) + 4,
-                    left: popoverAnchor?.left ?? 0,
+                    top: Math.max(8, selection.rect.bottom + 6),
+                    left: Math.max(8, selection.rect.left),
                   }}
                 >
                   <span className="font-mono text-[10px] text-ink">+3</span>
@@ -600,7 +606,11 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
               <VariationsPopover
                 open={popoverOpen}
-                anchor={popoverAnchor}
+                anchor={
+                  selection
+                    ? { top: selection.rect.bottom, left: selection.rect.left }
+                    : null
+                }
                 selection={selection?.text ?? ""}
                 kind={selection?.kind ?? "phrase"}
                 sourceContext={sourceContext}

@@ -69,7 +69,7 @@ export function VariationsPopover(props: Props) {
         <button
           aria-hidden
           tabIndex={-1}
-          className="pointer-events-none absolute h-0 w-0"
+          className="pointer-events-none fixed h-0 w-0"
           style={anchor ? { top: anchor.top, left: anchor.left } : undefined}
         />
       </PopoverTrigger>
