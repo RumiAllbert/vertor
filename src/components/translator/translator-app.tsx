@@ -82,14 +82,34 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     store.list().then(setDocs);
   }, [store]);
 
+  // Auto-save status — surfaces the existing 600ms-debounced save in the UI
+  // so the user can see their work is being persisted.
+  type SaveState = "idle" | "pending" | "saved" | "error";
+  const [saveState, setSaveState] = React.useState<SaveState>("idle");
+  const lastSavedAtRef = React.useRef<number | null>(null);
+  const [, forceRerender] = React.useState(0);
+
   React.useEffect(() => {
     if (!doc.sourceText.trim() && !doc.translatedText.trim()) return;
+    setSaveState("pending");
     const t = setTimeout(async () => {
-      await store.save({ ...doc, updatedAt: Date.now() });
-      setDocs(await store.list());
+      try {
+        await store.save({ ...doc, updatedAt: Date.now() });
+        setDocs(await store.list());
+        lastSavedAtRef.current = Date.now();
+        setSaveState("saved");
+      } catch {
+        setSaveState("error");
+      }
     }, 600);
     return () => clearTimeout(t);
   }, [doc, store]);
+
+  // Tick once a minute so the "Saved 3 min ago" label refreshes itself.
+  React.useEffect(() => {
+    const interval = setInterval(() => forceRerender((n) => n + 1), 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   React.useEffect(() => {
     store.list().then((all) => {
@@ -392,6 +412,14 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             }}
             className="display min-w-0 flex-1 bg-transparent px-1 text-[20px] leading-none outline-none placeholder:italic placeholder:text-muted-foreground"
             placeholder="Untitled"
+            aria-label="Document title"
+          />
+
+          {/* Auto-save indicator — tiny, italic, sits beside the title */}
+          <SaveStatus
+            state={saveState}
+            lastSavedAt={lastSavedAtRef.current}
+            hasContent={Boolean(doc.sourceText.trim() || doc.translatedText.trim())}
           />
 
           {/* Language tuple */}
@@ -493,7 +521,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
         {/* Two-pane editor */}
         <div ref={containerRef} className="relative grid min-h-0 flex-1 grid-cols-2">
           {/* Source */}
-          <section className="flex min-w-0 flex-col">
+          <section className="flex min-w-0 min-h-0 flex-col">
             <div className="flex items-baseline justify-between border-b border-hairline px-10 py-3">
               <span className="small-caps">Source</span>
               <span className="font-mono text-[10.5px] text-muted-foreground">
@@ -512,7 +540,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           <span aria-hidden className="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 w-px bg-hairline" />
 
           {/* Translation */}
-          <section className="flex min-w-0 flex-col">
+          <section className="flex min-w-0 min-h-0 flex-col">
             <div className="flex items-baseline justify-between border-b border-hairline px-10 py-3">
               <span className="small-caps">Translation</span>
               <span className="font-mono text-[10.5px] text-muted-foreground">
@@ -597,7 +625,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           </section>
         </div>
 
-        <footer className="flex items-baseline justify-between gap-2 border-t border-hairline px-6 py-2">
+        <footer className="flex shrink-0 items-baseline justify-between gap-2 border-t border-hairline bg-background px-6 py-2">
           <span className="text-[10.5px] italic text-muted-foreground">
             {translating
               ? "Streaming…"
@@ -613,6 +641,57 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
       </main>
     </div>
   );
+}
+
+/* ---------------- SaveStatus ---------------- */
+
+type SaveStateValue = "idle" | "pending" | "saved" | "error";
+
+function SaveStatus({
+  state,
+  lastSavedAt,
+  hasContent,
+}: {
+  state: SaveStateValue;
+  lastSavedAt: number | null;
+  hasContent: boolean;
+}) {
+  if (!hasContent) return null;
+
+  if (state === "pending") {
+    return (
+      <span className="shrink-0 text-[11px] italic text-muted-foreground">
+        Saving…
+      </span>
+    );
+  }
+  if (state === "error") {
+    return (
+      <span className="shrink-0 text-[11px] italic text-destructive">
+        Couldn’t save
+      </span>
+    );
+  }
+  if (state === "saved" && lastSavedAt) {
+    return (
+      <span
+        className="shrink-0 text-[11px] italic text-muted-foreground"
+        title={new Date(lastSavedAt).toLocaleString()}
+      >
+        Saved {timeAgo(lastSavedAt)}
+      </span>
+    );
+  }
+  return null;
+}
+
+function timeAgo(ts: number): string {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} hr ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 /* helpers */
