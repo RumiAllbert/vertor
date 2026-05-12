@@ -24,18 +24,27 @@ const CYCLE: { word: string; at: number }[] = [
 const SETTLE_AT = 880; // wordmark lands on "Vertor" and supporting elements blur-up
 const INTRO_FLAG = "vertor.intro.shown";
 
-type Phase = "pre" | "playing" | "done";
+type Phase = "playing" | "done";
+
+// useLayoutEffect runs before paint on the client (so we can decide play-vs-
+// skip without flicker), but warns if used during SSR. Standard isomorphic
+// fallback to useEffect on the server.
+const useIsoLayoutEffect =
+  typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
 
 export function Hero({ authEnabled }: { authEnabled: boolean }) {
   const sectionRef = React.useRef<HTMLElement>(null);
 
-  // Intro state. Starts in "pre" on both server and client so the SSR'd HTML
-  // renders the final wordmark; the useEffect below decides whether to play.
-  const [phase, setPhase] = React.useState<Phase>("pre");
+  // Initial state must match between SSR and the first client render:
+  //   • "done" + "Vertor" so SSR HTML / no-JS users get the fully composed
+  //     hero with the normal blur-up cascade.
+  //   • If JS decides to play the intro, useIsoLayoutEffect synchronously
+  //     flips state to "playing"/"vertere" before the browser paints, so
+  //     the user only ever sees the intro start state — no flash of "done".
+  const [phase, setPhase] = React.useState<Phase>("done");
   const [word, setWord] = React.useState("Vertor");
 
-  // Decide whether to play the intro on mount, then run it.
-  React.useEffect(() => {
+  useIsoLayoutEffect(() => {
     let skip = false;
     try {
       const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -46,10 +55,7 @@ export function Hero({ authEnabled }: { authEnabled: boolean }) {
       // err on the side of playing the intro — it's lightweight.
     }
 
-    if (skip) {
-      setPhase("done");
-      return;
-    }
+    if (skip) return; // stay at the SSR "done" state — animations cascade normally
 
     setWord(FIRST_WORD);
     setPhase("playing");
@@ -103,20 +109,12 @@ export function Hero({ authEnabled }: { authEnabled: boolean }) {
     animationDelay: `${delayMs}ms`,
   });
 
-  // Pick the wordmark's animation class.
-  // - During cycle frames: .wordmark-cycle (fast blur-flick)
-  // - When the final word lands: .wordmark-settle (slower, letter-spacing collapse)
-  // - Skip case (phase === "done" without play): no class — just static
-  const wordmarkAnim =
-    phase === "playing"
-      ? word === "Vertor"
-        ? "wordmark-settle"
-        : "wordmark-cycle"
-      : phase === "done" && word === "Vertor" && wasPlaying.current
-        ? "wordmark-settle"
-        : "";
-  // (The settle animation stays pinned even after phase flips to "done", so
-  // it has time to finish playing on the same DOM node.)
+  // Wordmark animation class — keyed on `word` so each frame remounts:
+  //   • cycle frames (vertere, traduire, …) → fast blur-flick
+  //   • final frame ("Vertor") → slower settle with letter-spacing collapse
+  // The settle also runs on the skip-case mount, so users who've already seen
+  // the intro still get a small dignified entrance instead of a hard snap.
+  const wordmarkAnim = word === "Vertor" ? "wordmark-settle" : "wordmark-cycle";
 
   return (
     <section
@@ -236,8 +234,3 @@ export function Hero({ authEnabled }: { authEnabled: boolean }) {
     </section>
   );
 }
-
-// Track whether the intro actually played, so the settle animation runs
-// even after phase flips to "done" (the wordmark element gets re-keyed to
-// "Vertor" and we want it to land, not snap).
-const wasPlaying = { current: false };
