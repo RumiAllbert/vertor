@@ -371,6 +371,55 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     ? neighborhood(doc.translatedText, selection.start, selection.end)
     : "";
 
+  // Editable translation pane: keep the DOM uncontrolled so the user's caret
+  // doesn't jump on every render. We imperatively sync only when an EXTERNAL
+  // change diverges from the DOM (streaming, variation applied, doc opened).
+  // While the popover is open over a selection, we replace the content with
+  // marked HTML so the selected range stays visually highlighted; we restore
+  // plain text the moment the popover closes.
+  React.useEffect(() => {
+    const el = translationRef.current;
+    if (!el) return;
+
+    if (popoverOpen && selection) {
+      const html =
+        escapeHtml(doc.translatedText.slice(0, selection.start)) +
+        '<mark data-vertor-mark class="rounded-sm bg-ink/15 px-0.5 text-foreground">' +
+        escapeHtml(doc.translatedText.slice(selection.start, selection.end)) +
+        "</mark>" +
+        escapeHtml(doc.translatedText.slice(selection.end));
+      if (el.innerHTML !== html) el.innerHTML = html;
+      return;
+    }
+
+    if (el.innerText !== doc.translatedText) {
+      el.innerText = doc.translatedText;
+    }
+  }, [doc.translatedText, popoverOpen, selection]);
+
+  const onTranslationInput = (e: React.FormEvent<HTMLDivElement>) => {
+    // Edits are only allowed when no popover/highlight is up, but guard anyway.
+    if (popoverOpen) return;
+    const next = e.currentTarget.innerText;
+    setDoc((d) => ({ ...d, translatedText: next, updatedAt: Date.now() }));
+  };
+
+  const onTranslationPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    // Strip formatting on paste — plain text only.
+    e.preventDefault();
+    const text = e.clipboardData.getData("text/plain");
+    if (!text) return;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(document.createTextNode(text));
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    e.currentTarget.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
   const sourceLangBadge =
     doc.sourceLang === "auto"
       ? detectedLang
@@ -583,24 +632,21 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
               )}
               <div
                 ref={translationRef}
+                contentEditable={!translating && !popoverOpen && Boolean(doc.translatedText)}
+                suppressContentEditableWarning
+                spellCheck
                 onMouseUp={onTranslationMouseUp}
+                onInput={onTranslationInput}
+                onPaste={onTranslationPaste}
                 className="editor-surface select-text whitespace-pre-wrap px-10 pt-7 pb-10 outline-none"
-              >
-                {selection ? (
-                  <>
-                    {doc.translatedText.slice(0, selection.start)}
-                    <mark className="rounded-sm bg-ink/15 px-0.5 text-foreground">
-                      {doc.translatedText.slice(selection.start, selection.end)}
-                    </mark>
-                    {doc.translatedText.slice(selection.end)}
-                  </>
-                ) : (
-                  doc.translatedText
-                )}
-                {translating && (
-                  <span className="caret ml-0.5 inline-block h-[0.95em] w-[2px] bg-ink align-text-bottom" />
-                )}
-              </div>
+              />
+              {translating && (
+                <span
+                  aria-hidden
+                  className="caret pointer-events-none absolute h-[1.05em] w-[2px] bg-ink"
+                  style={{ left: 32, top: 24 }}
+                />
+              )}
 
               {selection && !popoverOpen && (
                 <button
@@ -718,6 +764,15 @@ function timeAgo(ts: number): string {
 }
 
 /* helpers */
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 function wordCount(text: string) {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
