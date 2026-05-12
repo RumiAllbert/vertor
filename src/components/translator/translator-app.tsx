@@ -21,6 +21,8 @@ import { MigrateBanner } from "./migrate-banner";
 import { languageName } from "@/lib/languages";
 import type { VariationKind } from "@/lib/prompts";
 import { cn } from "@/lib/utils";
+import { captureRevision, listRevisions, truncate } from "@/lib/revisions";
+import type { Revision } from "@/lib/db/schema";
 
 type SelectionInfo = {
   text: string;
@@ -64,6 +66,14 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
   const [selection, setSelection] = React.useState<SelectionInfo | null>(null);
   const [popoverOpen, setPopoverOpen] = React.useState(false);
+
+  // Revision history state
+  const [revisions, setRevisions] = React.useState<Revision[]>([]);
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [selectedRevision, setSelectedRevision] = React.useState<Revision | null>(null);
+  const [restoring, setRestoring] = React.useState(false);
+  const lastEditCaptureRef = React.useRef<{ ts: number; text: string } | null>(null);
+  const loadedFromHistoryRef = React.useRef(false);
 
   const translationRef = React.useRef<HTMLDivElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -111,6 +121,21 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     const interval = setInterval(() => forceRerender((n) => n + 1), 60_000);
     return () => clearInterval(interval);
   }, []);
+
+  // Load revisions for the current doc (cloud-only) and reset on doc change.
+  React.useEffect(() => {
+    if (!session.user || !doc.id) {
+      setRevisions([]);
+      return;
+    }
+    let cancelled = false;
+    listRevisions(doc.id).then((rs) => {
+      if (!cancelled) setRevisions(rs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [doc.id, session.user]);
 
   React.useEffect(() => {
     store.list().then((all) => {
@@ -198,9 +223,11 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
       modelId: doc.modelId,
     });
     titleLockedRef.current = false;
+    loadedFromHistoryRef.current = true; // suppress an accidental edit-capture
     setDoc(fresh);
     setDetectedLang(null);
     setGlobalInstruction("");
+    setSelectedRevision(null);
   };
 
   const openDocument = (id: string) => {
@@ -208,10 +235,12 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     if (found) {
       // Existing docs have intentional titles — don't auto-overwrite them.
       titleLockedRef.current = true;
+      loadedFromHistoryRef.current = true; // suppress an accidental edit-capture
       setDoc(found);
       setDetectedLang(null);
       setSelection(null);
       setPopoverOpen(false);
+      setSelectedRevision(null);
     }
   };
 
@@ -220,6 +249,29 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     setDocs(await store.list());
     if (doc.id === id) newDocument();
   };
+
+  // Captures a new revision and prepends it to local state. No-ops in local
+  // mode (session.user absent). Failures degrade silently per captureRevision's
+  // contract — we don't want a flaky revision insert to break the user's flow.
+  const capture = React.useCallback(
+    async (opts: {
+      kind: "translated" | "variation" | "edit" | "restored";
+      modelId?: string;
+      summary?: string;
+    }) => {
+      if (!session.user) return;
+      const rev = await captureRevision(doc.id, {
+        kind: opts.kind,
+        modelId: opts.modelId,
+        summary: opts.summary,
+        sourceText: doc.sourceText,
+        translatedText: doc.translatedText,
+      });
+      if (rev) setRevisions((prev) => [rev, ...prev]);
+      lastEditCaptureRef.current = { ts: Date.now(), text: doc.translatedText };
+    },
+    [doc.id, doc.sourceText, doc.translatedText, session.user],
+  );
 
   const translate = React.useCallback(
     async (overrideInstruction?: string) => {
@@ -255,6 +307,14 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           acc += decoder.decode(value, { stream: true });
           setDoc((d) => ({ ...d, translatedText: acc }));
         }
+        // Capture the completed translation as a revision milestone. Skip if
+        // the request aborted mid-flight (translation is partial).
+        if (!controller.signal.aborted && acc.length > 0) {
+          // Defer so doc state has flushed before capture reads it.
+          setTimeout(() => capture({ kind: "translated", modelId: effectiveModelId }), 0);
+        }
+      // Edit-settle revision capture lives after `capture` is defined; see
+      // the effect below this callback.
       } catch (e) {
         if ((e as Error).name !== "AbortError") console.error(e);
       } finally {
@@ -262,7 +322,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
         abortRef.current = null;
       }
     },
-    [doc.sourceText, doc.sourceLang, doc.targetLang, effectiveModelId, globalInstruction],
+    [doc.sourceText, doc.sourceLang, doc.targetLang, effectiveModelId, globalInstruction, capture],
   );
 
   const detectLanguage = React.useCallback(async () => {
@@ -288,6 +348,29 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     const t = setTimeout(() => detectLanguage(), 800);
     return () => clearTimeout(t);
   }, [doc.sourceText, doc.sourceLang, detectLanguage]);
+
+  // Edit-settle revision capture: 15s after the last translatedText change,
+  // capture an "edit" revision IF the content actually differs from the last
+  // captured snapshot and the change wasn't from a doc-open or restore.
+  React.useEffect(() => {
+    if (!session.user) return;
+    if (translating || popoverOpen) return;
+    if (loadedFromHistoryRef.current) {
+      loadedFromHistoryRef.current = false;
+      return;
+    }
+    if (!doc.translatedText.trim()) return;
+    const last = lastEditCaptureRef.current;
+    if (last && last.text === doc.translatedText) return;
+
+    const t = setTimeout(() => {
+      // Re-check inside the timer in case state changed since we scheduled.
+      const prev = lastEditCaptureRef.current;
+      if (prev && prev.text === doc.translatedText) return;
+      capture({ kind: "edit" });
+    }, 15_000);
+    return () => clearTimeout(t);
+  }, [doc.translatedText, session.user, translating, popoverOpen, capture]);
 
   const onTranslationMouseUp = () => {
     const node = translationRef.current;
@@ -345,6 +428,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const applyReplacement = (replacement: string) => {
     if (!selection) return;
     const { start, end } = selection;
+    const oldText = selection.text;
     setDoc((d) => ({
       ...d,
       translatedText: d.translatedText.slice(0, start) + replacement + d.translatedText.slice(end),
@@ -352,6 +436,16 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     setPopoverOpen(false);
     setSelection(null);
     window.getSelection()?.removeAllRanges();
+    // Capture the variation as a revision (background; failures swallowed).
+    setTimeout(
+      () =>
+        capture({
+          kind: "variation",
+          modelId: effectiveModelId,
+          summary: `Replaced "${truncate(oldText, 30)}" with "${truncate(replacement, 30)}"`,
+        }),
+      0,
+    );
   };
 
   const sourceContext = selection ? neighborhood(doc.sourceText, 0, doc.sourceText.length, 1200) : "";
