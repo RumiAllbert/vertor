@@ -70,6 +70,9 @@ export function UserMenu({ session }: { session: SessionInfo }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild className="text-[13px]">
+          <a href="/dashboard">Dashboard</a>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="text-[13px]">
           <a href="/api/auth/signout">Sign out</a>
         </DropdownMenuItem>
       </DropdownMenuContent>
