@@ -21,9 +21,10 @@ import { MigrateBanner } from "./migrate-banner";
 import { languageName } from "@/lib/languages";
 import type { VariationKind } from "@/lib/prompts";
 import { cn } from "@/lib/utils";
-import { captureRevision, listRevisions, truncate } from "@/lib/revisions";
+import { captureRevision, listRevisions, restoreRevision, truncate } from "@/lib/revisions";
 import type { Revision } from "@/lib/db/schema";
 import { HistoryPanel } from "./history-panel";
+import { DiffView } from "./diff-view";
 
 type SelectionInfo = {
   text: string;
@@ -449,6 +450,29 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     );
   };
 
+  const restoreSelected = React.useCallback(async () => {
+    if (!selectedRevision) return;
+    setRestoring(true);
+    try {
+      const out = await restoreRevision(doc.id, selectedRevision.id);
+      if (out) {
+        // Mark this as a non-user mutation so the edit-settle effect doesn't
+        // re-capture immediately after the restore lands.
+        loadedFromHistoryRef.current = true;
+        setDoc((d) => ({
+          ...d,
+          sourceText: out.document.sourceText,
+          translatedText: out.document.translatedText,
+          updatedAt: Date.now(),
+        }));
+        setRevisions((prev) => [out.revision, ...prev]);
+        setSelectedRevision(null);
+      }
+    } finally {
+      setRestoring(false);
+    }
+  }, [selectedRevision, doc.id]);
+
   const sourceContext = selection ? neighborhood(doc.sourceText, 0, doc.sourceText.length, 1200) : "";
   const translationContext = selection
     ? neighborhood(doc.translatedText, selection.start, selection.end)
@@ -711,6 +735,15 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                 {doc.targetLang} · {wordCount(doc.translatedText)} {wordCount(doc.translatedText) === 1 ? "word" : "words"}
               </span>
             </div>
+            {selectedRevision ? (
+              <DiffView
+                revision={selectedRevision}
+                currentText={doc.translatedText}
+                restoring={restoring}
+                onRestore={restoreSelected}
+                onBack={() => setSelectedRevision(null)}
+              />
+            ) : (
             <div className="relative min-h-0 flex-1 overflow-y-auto">
               {!doc.translatedText && !translating && (
                 <div className="flex h-full items-center justify-center px-12">
@@ -791,6 +824,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                 }}
               />
             </div>
+            )}
           </section>
         </div>
 
