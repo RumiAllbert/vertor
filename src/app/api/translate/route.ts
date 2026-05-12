@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { streamText } from "ai";
 import { z } from "zod";
-import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
+import { DEFAULT_MODEL_ID } from "@/lib/models";
+import { resolveModel } from "@/lib/model-client";
 import { translationSystem } from "@/lib/prompts";
 
 export const runtime = "nodejs";
@@ -22,10 +23,9 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: parsed.error.message }), { status: 400 });
   }
   const { text, targetLang, modelId, instruction } = parsed.data;
-  const model = getModel(modelId);
 
   const result = streamText({
-    model: model.gateway,
+    model: resolveModel(modelId),
     system: translationSystem(targetLang, instruction),
     prompt: text,
     temperature: 0.4,

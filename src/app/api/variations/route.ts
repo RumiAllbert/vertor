@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { generateObject } from "ai";
 import { z } from "zod";
-import { getModel, DEFAULT_MODEL_ID } from "@/lib/models";
+import { DEFAULT_MODEL_ID } from "@/lib/models";
+import { resolveModel } from "@/lib/model-client";
 import { variationsSystem, type VariationKind } from "@/lib/prompts";
 
 export const runtime = "nodejs";
@@ -26,8 +27,6 @@ export async function POST(req: NextRequest) {
   const { selection, sourceContext, translationContext, sourceLang, targetLang, modelId, kind, instruction } =
     parsed.data;
 
-  const model = getModel(modelId);
-
   const userPrompt = [
     `### Selected ${kind}`,
     selection,
@@ -40,7 +39,7 @@ export async function POST(req: NextRequest) {
   ].join("\n");
 
   const { object } = await generateObject({
-    model: model.gateway,
+    model: resolveModel(modelId),
     system: variationsSystem({ kind: kind as VariationKind, sourceLang, targetLang, instruction }),
     prompt: userPrompt,
     temperature: 0.8,
