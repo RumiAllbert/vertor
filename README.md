@@ -6,11 +6,14 @@ Most translation tools spit out something technically correct and tonally flat. 
 
 ## What it does
 
-- **Translate** whole documents while preserving paragraphs, markdown, and the author's voice
-- **Variations** — click any word, phrase, paragraph, or the whole text and get three alternative renderings with different tone or syntax
-- **Multi-model** — pick between Gemini, Claude, and GPT through a single dropdown, all routed via [Vercel AI Gateway](https://vercel.com/docs/ai-gateway)
-- **Export** to PDF or DOCX when you're happy with it
-- **Save & sign in** — Google login keeps your documents around (optional, runs fine without auth too)
+- **Translate** whole documents while preserving paragraphs, markdown, and the author's voice. Output streams sentence by sentence.
+- **Variations** — double-click a word or drag-select a phrase, sentence, paragraph, or the whole doc to get three alternative renderings in different registers (literal / natural / lyrical). Like one of them? Hit *more like this* on it to get three more in the same vein.
+- **Editable translations** — the right pane is a real editor, not a read-only window. Fix a comma, rewrite a sentence, your edits stick.
+- **Multi-model** — Gemini 3.1 Pro / Flash / Flash-Lite, Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5, GPT-5 / mini. Pick one in Advanced mode, or stay in Simple and the app routes to Flash-Lite (cheap, fast, fluent).
+- **Auto-detect** source language; **auto-generated titles** from the first sentence (via Flash-Lite); **auto-save** with a live status chip.
+- **Dashboard** (signed in) — translation stats, language breakdown, 30-day activity sparkline, models used, plus an LLM-generated **Translator Personality** card that unlocks at 5 docs and refreshes every 5 more.
+- **Export** to PDF or DOCX when you're happy with it.
+- **Save & sign in** — Google login keeps your documents around. Runs fine without auth too (everything saves to your browser).
 
 ## How it works
 
@@ -20,54 +23,77 @@ flowchart LR
     APP --> DETECT[/api/detect/]
     APP --> TRANSLATE[/api/translate/]
     APP --> VARY[/api/variations/]
+    APP --> EXPORT[/api/export/]
 
-    DETECT --> GW[Vercel AI Gateway]
-    TRANSLATE --> GW
-    VARY --> GW
+    DETECT --> RM[resolveModel]
+    TRANSLATE --> RM
+    VARY --> RM
 
-    GW --> G[Google Gemini]
-    GW --> A[Anthropic Claude]
-    GW --> O[OpenAI GPT]
+    RM -->|direct key set| DIRECT[@ai-sdk/google / anthropic / openai]
+    RM -->|fallback| GW[Vercel AI Gateway]
+    DIRECT --> P[Google · Anthropic · OpenAI]
+    GW --> P
 
     APP <--> DB[(Neon Postgres<br/>via Drizzle)]
-    APP --> EXPORT[/api/export/]
     EXPORT --> FILE[PDF / DOCX]
 ```
 
-One Gateway key, all the providers. Drizzle handles the schema, Neon stores the documents, Auth.js handles Google sign-in. Nothing fancy, just composed well.
+Direct provider keys are preferred when set (cheaper, free tier on Google AI Studio, no Gateway markup). One Gateway key works as a fallback for everything. Drizzle handles the schema, Neon stores the documents, Auth.js handles Google sign-in. Nothing fancy, just composed well.
 
 ## Stack
 
 - **Next.js 16** App Router + React 19
-- **AI SDK v6** through Vercel AI Gateway
+- **AI SDK v6** — direct provider clients (`@ai-sdk/google`, `@ai-sdk/anthropic`, `@ai-sdk/openai`) with Vercel AI Gateway fallback
 - **Auth.js v5** (beta) + Drizzle adapter + Google OAuth
 - **Drizzle ORM** + Neon Postgres
-- **Tailwind v4** + shadcn/ui
+- **Tailwind v4** + shadcn/ui + Radix primitives
+- **Vitest** for tests
 
 ## Running it locally
 
-You'll need pnpm, a Vercel account (for the AI Gateway key + Neon), and Google OAuth creds if you want sign-in.
+You'll need pnpm. For models, either a Vercel AI Gateway key *or* direct provider keys (any combination). For sign-in + cloud save, a Neon database + Google OAuth creds.
 
 ```bash
 pnpm install
 cp .env.example .env.local   # fill in the values
-pnpm drizzle-kit push        # apply schema to your DB
+pnpm drizzle-kit push        # apply schema to your DB (only needed if DATABASE_URL is set)
 pnpm dev
 ```
 
-Then open http://localhost:3000.
+Then open <http://localhost:3000>.
 
-`.env.example` lists what's needed — the short version: an `AI_GATEWAY_API_KEY`, a `DATABASE_URL`, and the three `AUTH_*` vars. If you skip the auth vars the app still runs, just without sign-in or saved docs.
+### The cheapest path
+
+A free [Google AI Studio key](https://aistudio.google.com/apikey) in `GOOGLE_GENERATIVE_AI_API_KEY` is enough — every Google model just works, no Gateway needed. Skip `DATABASE_URL` and the app runs in local mode (history in your browser). Skip the `AUTH_*` vars and there's no sign-in (and no dashboard). See `.env.example` for the full list.
+
+## Commands
+
+```bash
+pnpm dev                  # dev server
+pnpm build                # production build
+pnpm lint                 # ESLint
+pnpm test                 # vitest, run once
+pnpm test:watch           # vitest, watch mode
+pnpm drizzle-kit push     # apply schema (uses DATABASE_URL)
+```
 
 ## Contributing
 
 PRs welcome. The codebase is small and readable on purpose — here's where things live:
 
-- `src/app/api/` — the route handlers
+- `src/app/api/` — route handlers (`translate`, `detect`, `variations`, `export`, `documents`, `auth`)
+- `src/app/dashboard/` — signed-in dashboard (stats, sparkline, personality card)
+- `src/app/(marketing)/` — landing page + intro animation
+- `src/app/sign-in/` — custom editorial sign-in page
 - `src/lib/prompts.ts` — all LLM prompts (edit here, not inline in routes)
 - `src/lib/models.ts` — model registry; add a new model here
+- `src/lib/model-client.ts` — direct-provider vs Gateway resolution
 - `src/lib/languages.ts` — supported languages
-- `src/components/translator/` — the UI
+- `src/lib/stats.ts` — dashboard analytics
+- `src/lib/personality.ts` — translator-personality generation
+- `src/lib/db/schema.ts` — Drizzle schema (source of truth)
+- `src/components/translator/` — the editor UI
+- `src/components/landing/` — hero, showcase, closing
 
 If you're adding a model, just append to `MODELS` in `models.ts` with its Gateway slug. If you're tweaking translation behavior, `prompts.ts` is the one file you want.
 
