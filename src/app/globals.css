@@ -298,16 +298,48 @@ svg.lucide,
 }
 .blur-up { animation: blurUp 700ms cubic-bezier(0.2, 0.65, 0.25, 1) both; }
 
-/* Hero intro — wordmark settle animation.
+/* ─────────────────────────────────────────────────────────────────────
+ *  Hero intro animations
+ * ─────────────────────────────────────────────────────────────────────
  *
- * Plays once when the aurora-only opening ends. Letters start slightly
- * spread (positive letter-spacing) and blurred at scale 1.06, then collapse
- * into their final tight tracking. Reads like a printed-press impression. */
+ *  All intro animations are scoped behind `.vertor-intro` on <html>, which
+ *  is added by an inline script in the marketing layout *before* the
+ *  browser paints. When the class is absent (no-JS, returning visitor,
+ *  reduced-motion), the hero composes immediately at full opacity — no
+ *  flicker, no flash of either state. */
+
 @keyframes wordmarkSettle {
-  0%   { opacity: 0;    filter: blur(14px); transform: scale(1.06); letter-spacing: 0.05em; }
-  50%  { opacity: 1;    filter: blur(0);    transform: scale(1);    letter-spacing: -0.02em; }
-  100% { opacity: 1;    filter: blur(0);    transform: scale(1);    letter-spacing: -0.02em; }
+  0%   { opacity: 0; filter: blur(14px); transform: scale(1.06); letter-spacing: 0.05em; }
+  55%  { opacity: 1; filter: blur(0);    transform: scale(1);    letter-spacing: -0.02em; }
+  100% { opacity: 1; filter: blur(0);    transform: scale(1);    letter-spacing: -0.02em; }
 }
-.wordmark-settle {
-  animation: wordmarkSettle 680ms cubic-bezier(0.2, 0.7, 0.25, 1) both;
+
+@keyframes typewriterReveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+/* Intro cascade — each element waits its delay, then runs its animation.
+ * The `both` fill mode keeps each element at the `from` state during the
+ * delay (so they're invisible) and at the `to` state after. */
+.vertor-intro .intro-wordmark {
+  animation: wordmarkSettle 720ms cubic-bezier(0.2, 0.7, 0.25, 1) 1500ms both;
+}
+.vertor-intro .intro-cascade-1 {
+  animation: blurUp 700ms cubic-bezier(0.2, 0.65, 0.25, 1) 1750ms both;
+}
+.vertor-intro .intro-typewriter {
+  animation: typewriterReveal 1100ms steps(50, end) 2150ms both;
+}
+.vertor-intro .intro-cascade-2 {
+  animation: blurUp 700ms cubic-bezier(0.2, 0.65, 0.25, 1) 2500ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vertor-intro .intro-wordmark,
+  .vertor-intro .intro-cascade-1,
+  .vertor-intro .intro-typewriter,
+  .vertor-intro .intro-cascade-2 {
+    animation: none;
+  }
 }

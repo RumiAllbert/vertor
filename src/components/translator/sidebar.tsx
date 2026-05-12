@@ -38,6 +38,26 @@ export function HistorySidebar({
     );
   }, [docs, q]);
 
+  // Two-step delete: first click arms it, second confirms. Auto-disarms
+  // after 4s of inactivity or when the user clicks anything else.
+  const [confirmingId, setConfirmingId] = React.useState<string | null>(null);
+  const disarmTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const arm = React.useCallback((id: string) => {
+    if (disarmTimerRef.current) clearTimeout(disarmTimerRef.current);
+    setConfirmingId(id);
+    disarmTimerRef.current = setTimeout(() => setConfirmingId(null), 4000);
+  }, []);
+
+  const disarm = React.useCallback(() => {
+    if (disarmTimerRef.current) clearTimeout(disarmTimerRef.current);
+    setConfirmingId(null);
+  }, []);
+
+  React.useEffect(() => () => {
+    if (disarmTimerRef.current) clearTimeout(disarmTimerRef.current);
+  }, []);
+
   return (
     <aside className={cn("flex h-full flex-1 flex-col", !hideOuterShell && "w-[252px] shrink-0 border-r border-hairline bg-muted/40")}>
       <div className="px-5 pt-6 pb-4">
@@ -77,50 +97,96 @@ export function HistorySidebar({
               Nothing here yet.
             </div>
           )}
-          {filtered.map((d, i) => (
-            <div
-              key={d.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelect(d.id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
+          {filtered.map((d, i) => {
+            const isArmed = confirmingId === d.id;
+            return (
+              <div
+                key={d.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  // Clicking anywhere on the row disarms a pending confirm
+                  // (on another row) before selecting.
+                  if (confirmingId && confirmingId !== d.id) disarm();
                   onSelect(d.id);
-                }
-              }}
-              className={cn(
-                "fade-up group relative flex w-full cursor-pointer items-start gap-3 rounded-sm px-3 py-2 text-left transition-colors",
-                currentId === d.id
-                  ? "bg-ink/10"
-                  : "hover:bg-foreground/[0.04]",
-              )}
-              style={{ animationDelay: `${Math.min(i * 22, 300)}ms` }}
-            >
-              {currentId === d.id && (
-                <span aria-hidden className="absolute left-0 top-2 bottom-2 w-px bg-ink" />
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium leading-tight">{d.title}</div>
-                <div className="mt-1 flex items-center gap-2 text-[10.5px] text-muted-foreground">
-                  <span>{timeAgo(d.updatedAt)}</span>
-                  <span>·</span>
-                  <span className="font-mono">{d.targetLang}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(d.id);
                 }}
-                className="text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-ink group-hover:opacity-100"
-                aria-label="Delete"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelect(d.id);
+                  }
+                }}
+                className={cn(
+                  "fade-up group relative flex w-full cursor-pointer items-start gap-3 rounded-sm px-3 py-2 text-left transition-colors",
+                  isArmed
+                    ? "bg-destructive/[0.08]"
+                    : currentId === d.id
+                      ? "bg-ink/10"
+                      : "hover:bg-foreground/[0.04]",
+                )}
+                style={{ animationDelay: `${Math.min(i * 22, 300)}ms` }}
               >
-                delete
-              </button>
-            </div>
-          ))}
+                {currentId === d.id && !isArmed && (
+                  <span aria-hidden className="absolute left-0 top-2 bottom-2 w-px bg-ink" />
+                )}
+                {isArmed && (
+                  <span aria-hidden className="absolute left-0 top-2 bottom-2 w-px bg-destructive" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-medium leading-tight">
+                    {d.title}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-[10.5px] text-muted-foreground">
+                    <span>{timeAgo(d.updatedAt)}</span>
+                    <span>·</span>
+                    <span className="font-mono">{d.targetLang}</span>
+                  </div>
+                </div>
+
+                {isArmed ? (
+                  // Two side-by-side micro-actions when armed: confirm + cancel.
+                  <div className="flex shrink-0 items-center gap-2 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        disarm();
+                        onDelete(d.id);
+                      }}
+                      className="font-medium text-destructive transition-colors hover:underline"
+                    >
+                      delete?
+                    </button>
+                    <span aria-hidden className="text-muted-foreground/50">
+                      ·
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        disarm();
+                      }}
+                      className="italic text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      arm(d.id);
+                    }}
+                    className="shrink-0 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    aria-label="Delete document"
+                  >
+                    delete
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </ScrollArea>
     </aside>
