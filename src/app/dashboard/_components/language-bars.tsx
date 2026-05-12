@@ -6,7 +6,7 @@ export function LanguageBars({
   if (items.length === 0) {
     return <p className="text-[13px] italic text-muted-foreground">No target languages yet.</p>;
   }
-  const max = Math.max(...items.map((i) => i.count));
+  const max = Math.max(1, ...items.map((i) => i.count));
   return (
     <ul className="space-y-3">
       {items.map((item) => {

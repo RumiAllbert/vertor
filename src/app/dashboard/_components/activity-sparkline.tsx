@@ -1,4 +1,5 @@
 export function ActivitySparkline({ data }: { data: { day: string; count: number }[] }) {
+  if (data.length === 0) return null;
   const max = Math.max(1, ...data.map((d) => d.count));
   const barCount = data.length;
   const barWidth = 100 / barCount;

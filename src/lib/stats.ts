@@ -107,7 +107,7 @@ export function computeStats(docs: StatDoc[], memberSince: Date | null, now = ne
   }
 
   const weekdayCounts = [0, 0, 0, 0, 0, 0, 0];
-  for (const d of docs) weekdayCounts[d.createdAt.getDay()] += 1;
+  for (const d of docs) weekdayCounts[d.createdAt.getUTCDay()] += 1;
   let mostActiveWeekday: number | null = null;
   let mostActiveWeekdayCount = 0;
   for (let i = 0; i < 7; i++) {
