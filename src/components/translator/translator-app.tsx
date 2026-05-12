@@ -289,31 +289,19 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     return () => clearTimeout(t);
   }, [doc.sourceText, doc.sourceLang, detectLanguage]);
 
-  const onTranslationMouseUp = (e: React.MouseEvent) => {
+  const onTranslationMouseUp = () => {
     const node = translationRef.current;
     if (!node) return;
     const sel = window.getSelection();
     if (!sel) return;
 
+    // A plain single click leaves the selection collapsed (no range). We
+    // only act on real selections — either a double-click word selection
+    // (native browser behavior) or a click-drag range. Single clicks just
+    // place the caret and clear any existing variation state.
     if (sel.isCollapsed) {
-      const range = caretRangeFromPoint(e.clientX, e.clientY);
-      if (!range || !node.contains(range.startContainer)) {
-        setSelection(null);
-        return;
-      }
-      sel.removeAllRanges();
-      sel.addRange(range);
-      try {
-        const s = sel as Selection & { modify?: (alter: string, dir: string, gran: string) => void };
-        if (typeof s.modify === "function") {
-          s.modify("move", "backward", "word");
-          s.modify("extend", "forward", "word");
-        } else {
-          expandSelectionToWord(sel);
-        }
-      } catch {
-        expandSelectionToWord(sel);
-      }
+      setSelection(null);
+      return;
     }
 
     if (!sel.rangeCount) return;
@@ -771,23 +759,6 @@ function wordCount(text: string) {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
-function caretRangeFromPoint(x: number, y: number): Range | null {
-  const doc = document as Document & {
-    caretRangeFromPoint?: (x: number, y: number) => Range | null;
-    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
-  };
-  if (typeof doc.caretRangeFromPoint === "function") return doc.caretRangeFromPoint(x, y);
-  if (typeof doc.caretPositionFromPoint === "function") {
-    const pos = doc.caretPositionFromPoint(x, y);
-    if (!pos) return null;
-    const r = document.createRange();
-    r.setStart(pos.offsetNode, pos.offset);
-    r.setEnd(pos.offsetNode, pos.offset);
-    return r;
-  }
-  return null;
-}
-
 function absoluteOffsets(root: HTMLElement, range: Range): { start: number; end: number } {
   const start = offsetWithin(root, range.startContainer, range.startOffset);
   const end = offsetWithin(root, range.endContainer, range.endOffset);
@@ -806,21 +777,3 @@ function offsetWithin(root: Node, node: Node, offset: number): number {
   return acc;
 }
 
-function expandSelectionToWord(sel: Selection) {
-  if (!sel.rangeCount) return;
-  const range = sel.getRangeAt(0);
-  const node = range.startContainer;
-  if (node.nodeType !== Node.TEXT_NODE) return;
-  const text = node.nodeValue ?? "";
-  const i = range.startOffset;
-  let start = i;
-  let end = i;
-  while (start > 0 && /\S/.test(text[start - 1] ?? "")) start--;
-  while (end < text.length && /\S/.test(text[end] ?? "")) end++;
-  if (start === end) return;
-  const next = document.createRange();
-  next.setStart(node, start);
-  next.setEnd(node, end);
-  sel.removeAllRanges();
-  sel.addRange(next);
-}
