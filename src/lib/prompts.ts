@@ -79,6 +79,34 @@ export function variationsSystem(opts: {
   return lines.join("\n");
 }
 
+export function alignmentSystem(opts: {
+  sourceLang: string;
+  targetLang: string;
+  direction: "source-to-translation" | "translation-to-source";
+}) {
+  const fromLang =
+    opts.direction === "source-to-translation"
+      ? opts.sourceLang === "auto"
+        ? "the source language"
+        : languageName(opts.sourceLang)
+      : languageName(opts.targetLang);
+  const toLang =
+    opts.direction === "source-to-translation"
+      ? languageName(opts.targetLang)
+      : opts.sourceLang === "auto"
+        ? "the source language"
+        : languageName(opts.sourceLang);
+  return [
+    `You align translations span-by-span.`,
+    `You are given a span selected from a text in ${fromLang} and the corresponding full text in ${toLang}.`,
+    `Identify the smallest substring in the ${toLang} text that conveys the same meaning as the selection.`,
+    `The returned match MUST appear verbatim in the ${toLang} text — copy it exactly, preserving punctuation, capitalization, accents, and whitespace.`,
+    `Quote the smallest contiguous span that fully carries the selection's meaning. Do not pad with surrounding words.`,
+    `If the selection's meaning is omitted, rephrased beyond recognition, or otherwise absent from the ${toLang} text, return null for match.`,
+    `Return ONLY a JSON object with a single "match" field. No commentary.`,
+  ].join("\n");
+}
+
 export function personalitySystem() {
   return [
     `You write playful, complimentary one-liners about a user's translation habits.`,

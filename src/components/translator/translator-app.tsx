@@ -29,6 +29,16 @@ import type { Revision } from "@/lib/db/schema";
 import { HistoryPanel } from "./history-panel";
 import { DiffView } from "./diff-view";
 import { MarkdownView } from "./markdown-view";
+import { AlignmentOverlay } from "./alignment-overlay";
+import {
+  splitParagraphs,
+  findParagraphIndex,
+  alignCacheKey,
+  getCachedAlignment,
+  setCachedAlignment,
+  type AlignDirection,
+  type AlignmentResult,
+} from "@/lib/alignment";
 
 type ViewMode = "edit" | "read";
 
@@ -41,6 +51,25 @@ type SelectionInfo = {
   // and can be used with position: fixed anywhere in the DOM.
   rect: { top: number; left: number; right: number; bottom: number; width: number; height: number };
 };
+
+// Cross-pane alignment state. paragraph* is filled instantly on selection
+// using paragraph-index mapping; tight* is filled when /api/align returns and
+// shrinks the highlight to the precise corresponding span. Both can be null
+// independently — paragraph alignment is best-effort (no-op on paragraph
+// count mismatch), tight is best-effort (no-op when the model can't find a
+// match).
+type Alignment = {
+  origin: "source" | "translation";
+  paragraphSource: AlignmentResult | null;
+  paragraphTranslation: AlignmentResult | null;
+  tightSource: AlignmentResult | null;
+  tightTranslation: AlignmentResult | null;
+};
+
+// Skip the LLM tightening pass for very long selections — they're almost
+// always full-paragraph or larger, where the instant paragraph highlight is
+// already correct and an LLM round-trip just adds latency and cost.
+const ALIGN_MAX_SELECTION = 1500;
 
 const CONTEXT_RADIUS = 240;
 
@@ -75,6 +104,9 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const [selection, setSelection] = React.useState<SelectionInfo | null>(null);
   const [popoverOpen, setPopoverOpen] = React.useState(false);
 
+  const [alignment, setAlignment] = React.useState<Alignment | null>(null);
+  const alignAbortRef = React.useRef<AbortController | null>(null);
+
   // Per-pane Edit/Read toggle. The editors hold raw markdown either way; Read
   // mode swaps them for a rendered MarkdownView (headings, lists, clickable
   // links). UI-only state — never persisted on LocalDoc.
@@ -105,6 +137,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const loadedFromHistoryRef = React.useRef(false);
 
   const translationRef = React.useRef<HTMLDivElement>(null);
+  const sourceTextareaRef = React.useRef<HTMLTextAreaElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const abortRef = React.useRef<AbortController | null>(null);
   // True when the title was either set by the user (typed into the input) or
@@ -177,6 +210,27 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
   const updateDoc = React.useCallback((patch: Partial<LocalDoc>) => {
     setDoc((d) => ({ ...d, ...patch, updatedAt: Date.now() }));
+  }, []);
+
+  // Clear cross-pane alignment whenever the underlying ground truth changes
+  // (different doc, view mode flipped to Read, popover opens, translation
+  // starts streaming). The alignment math is bound to specific char offsets
+  // that are no longer meaningful after any of these transitions.
+  React.useEffect(() => {
+    setAlignment(null);
+    alignAbortRef.current?.abort();
+  }, [doc.id, sourceViewMode, translationViewMode, translating, popoverOpen]);
+
+  // Esc clears any active alignment highlight.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setAlignment(null);
+        alignAbortRef.current?.abort();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   // In Simple mode, the document's model always tracks the simple-mode default.
@@ -414,6 +468,10 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     // place the caret and clear any existing variation state.
     if (sel.isCollapsed) {
       setSelection(null);
+      // Only clear cross-pane alignment when the existing alignment came
+      // from THIS pane — a source-originated alignment shouldn't vanish
+      // because the user dropped a caret on the translation side.
+      setAlignment((prev) => (prev?.origin === "translation" ? null : prev));
       return;
     }
 
@@ -421,6 +479,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     const range = sel.getRangeAt(0);
     if (!node.contains(range.commonAncestorContainer)) {
       setSelection(null);
+      setAlignment((prev) => (prev?.origin === "translation" ? null : prev));
       return;
     }
     const text = sel.toString().trim();
@@ -429,6 +488,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     // script). Stops clicks on " ", ",", "—", etc. from triggering the chip.
     if (!text || !/[\p{L}\p{N}]/u.test(text)) {
       setSelection(null);
+      setAlignment((prev) => (prev?.origin === "translation" ? null : prev));
       return;
     }
     const { start, end } = absoluteOffsets(node, range);
@@ -448,6 +508,150 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     };
 
     setSelection({ text, start, end, kind, rect });
+    triggerAlignment({ origin: "translation", start, end });
+  };
+
+  const triggerAlignment = React.useCallback(
+    ({ origin, start, end }: { origin: "source" | "translation"; start: number; end: number }) => {
+      // No alignment while a translation is streaming — both sides are
+      // volatile, and any LLM result will be wrong by the time it lands.
+      if (translating) return;
+      if (!doc.translatedText.trim()) return;
+
+      const srcParas = splitParagraphs(doc.sourceText);
+      const tgtParas = splitParagraphs(doc.translatedText);
+      const originParas = origin === "source" ? srcParas : tgtParas;
+      const otherParas = origin === "source" ? tgtParas : srcParas;
+      const paraIdx = findParagraphIndex(start, originParas);
+      const originPara = paraIdx >= 0 ? originParas[paraIdx] : null;
+      const otherPara = paraIdx >= 0 ? otherParas[paraIdx] ?? null : null;
+
+      // Show paragraph-level highlight on both sides immediately — origin gets
+      // its containing paragraph, other side gets the index-matched paragraph
+      // (best-effort: undefined if paragraph counts diverge).
+      const paragraphSource = origin === "source"
+        ? originPara ? { start: originPara.start, end: originPara.end } : null
+        : otherPara ? { start: otherPara.start, end: otherPara.end } : null;
+      const paragraphTranslation = origin === "translation"
+        ? originPara ? { start: originPara.start, end: originPara.end } : null
+        : otherPara ? { start: otherPara.start, end: otherPara.end } : null;
+
+      setAlignment({
+        origin,
+        paragraphSource,
+        paragraphTranslation,
+        // Origin pane's tight highlight is the user's literal selection — no
+        // round-trip needed.
+        tightSource: origin === "source" ? { start, end } : null,
+        tightTranslation: origin === "translation" ? { start, end } : null,
+      });
+
+      const direction: AlignDirection =
+        origin === "source" ? "source-to-translation" : "translation-to-source";
+      const originText = origin === "source" ? doc.sourceText : doc.translatedText;
+      const selectionText = originText.slice(start, end);
+
+      // Don't ping the LLM for paragraph-sized or larger selections — the
+      // instant paragraph highlight is already the right answer.
+      if (selectionText.length > ALIGN_MAX_SELECTION) return;
+
+      const cacheKey = alignCacheKey({
+        direction,
+        selection: selectionText,
+        selectionStart: start,
+        source: doc.sourceText,
+        translation: doc.translatedText,
+      });
+      const cached = getCachedAlignment(cacheKey);
+      if (cached !== undefined) {
+        // Apply cached result, but only if the origin side's literal selection
+        // is still the one this request was fired for — guards against a race
+        // where a new selection was made between this synchronous cache lookup
+        // and the (already-scheduled) state update.
+        setAlignment((prev) => {
+          if (!prev || prev.origin !== origin) return prev;
+          const originTight =
+            origin === "source" ? prev.tightSource : prev.tightTranslation;
+          if (originTight?.start !== start || originTight?.end !== end) return prev;
+          return origin === "source"
+            ? { ...prev, tightTranslation: cached }
+            : { ...prev, tightSource: cached };
+        });
+        return;
+      }
+
+      alignAbortRef.current?.abort();
+      const controller = new AbortController();
+      alignAbortRef.current = controller;
+
+      (async () => {
+        try {
+          const res = await fetch("/api/align", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({
+              source: doc.sourceText,
+              translation: doc.translatedText,
+              selection: selectionText,
+              selectionStart: start,
+              selectionEnd: end,
+              direction,
+              sourceLang: doc.sourceLang === "auto" ? detectedLang ?? "auto" : doc.sourceLang,
+              targetLang: doc.targetLang,
+            }),
+          });
+          if (!res.ok) return;
+          const payload = (await res.json()) as
+            | { start: number; end: number }
+            | { start: null };
+          const tight =
+            "end" in payload && typeof payload.start === "number"
+              ? { start: payload.start, end: payload.end }
+              : null;
+          setCachedAlignment(cacheKey, tight);
+          // Same staleness guard as the cached-path above — if the user has
+          // moved on to a different selection, drop this result rather than
+          // overwrite the newer highlight.
+          setAlignment((prev) => {
+            if (!prev || prev.origin !== origin) return prev;
+            const originTight =
+              origin === "source" ? prev.tightSource : prev.tightTranslation;
+            if (originTight?.start !== start || originTight?.end !== end) return prev;
+            return origin === "source"
+              ? { ...prev, tightTranslation: tight }
+              : { ...prev, tightSource: tight };
+          });
+        } catch (err) {
+          if ((err as Error).name !== "AbortError") console.error(err);
+        }
+      })();
+    },
+    [
+      doc.sourceText,
+      doc.translatedText,
+      doc.sourceLang,
+      doc.targetLang,
+      detectedLang,
+      translating,
+    ],
+  );
+
+  const onSourceSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    if (sourceViewMode !== "edit") return;
+    if (translating) return;
+    const ta = e.currentTarget;
+    const start = ta.selectionStart ?? 0;
+    const end = ta.selectionEnd ?? 0;
+    if (start === end) {
+      // Collapsed caret — only clear if the alignment came from this pane,
+      // otherwise leave the translation→source alignment visible.
+      setAlignment((prev) => (prev?.origin === "source" ? null : prev));
+      return;
+    }
+    const text = doc.sourceText.slice(start, end);
+    if (!text.trim() || !/[\p{L}\p{N}]/u.test(text)) return;
+    triggerAlignment({ origin: "source", start, end });
   };
 
   const showVariations = () => {
@@ -776,9 +980,11 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             </div>
             {sourceViewMode === "edit" ? (
               <Textarea
+                ref={sourceTextareaRef}
                 value={doc.sourceText}
                 onChange={(e) => updateDoc({ sourceText: e.target.value })}
                 onPaste={onSourcePaste}
+                onSelect={onSourceSelect}
                 placeholder="Paste or write the original here. The translation streams on the right."
                 className="editor-surface min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-10 pt-7 pb-10 shadow-none focus-visible:ring-0"
               />
@@ -909,6 +1115,28 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             )}
           </section>
         </div>
+
+        {alignment && sourceViewMode === "edit" && (alignment.tightSource ?? alignment.paragraphSource) && (
+          <AlignmentOverlay
+            targetRef={sourceTextareaRef}
+            kind="textarea"
+            text={doc.sourceText}
+            start={(alignment.tightSource ?? alignment.paragraphSource)!.start}
+            end={(alignment.tightSource ?? alignment.paragraphSource)!.end}
+            variant={alignment.tightSource ? "tight" : "paragraph"}
+          />
+        )}
+
+        {alignment && translationViewMode === "edit" && !selectedRevision && (alignment.tightTranslation ?? alignment.paragraphTranslation) && (
+          <AlignmentOverlay
+            targetRef={translationRef}
+            kind="contentEditable"
+            text={doc.translatedText}
+            start={(alignment.tightTranslation ?? alignment.paragraphTranslation)!.start}
+            end={(alignment.tightTranslation ?? alignment.paragraphTranslation)!.end}
+            variant={alignment.tightTranslation ? "tight" : "paragraph"}
+          />
+        )}
 
         <footer className="flex shrink-0 items-baseline justify-between gap-2 border-t border-hairline bg-background px-6 py-2">
           <span className="text-[10.5px] italic text-muted-foreground">
