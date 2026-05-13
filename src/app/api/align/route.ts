@@ -29,7 +29,15 @@ const Body = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const parsed = Body.safeParse(await req.json());
+  let payload: unknown;
+  try {
+    payload = await req.json();
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+      status: 400,
+    });
+  }
+  const parsed = Body.safeParse(payload);
   if (!parsed.success) {
     return new Response(JSON.stringify({ error: parsed.error.message }), {
       status: 400,
@@ -40,6 +48,7 @@ export async function POST(req: NextRequest) {
     translation,
     selection,
     selectionStart,
+    selectionEnd,
     direction,
     sourceLang,
     targetLang,
@@ -47,6 +56,20 @@ export async function POST(req: NextRequest) {
 
   const fromText = direction === "source-to-translation" ? source : translation;
   const toText = direction === "source-to-translation" ? translation : source;
+
+  // Sanity-check the offsets against the actual origin text. The client
+  // sometimes races against doc edits, and bogus offsets would give the LLM a
+  // garbled prompt.
+  if (
+    selectionEnd <= selectionStart ||
+    selectionEnd > fromText.length ||
+    fromText.slice(selectionStart, selectionEnd) !== selection
+  ) {
+    return new Response(
+      JSON.stringify({ error: "Selection offsets do not match origin text" }),
+      { status: 400 },
+    );
+  }
 
   // Compute paragraph context for both sides so we can hint the model at the
   // right neighborhood AND constrain the post-match search to the matching

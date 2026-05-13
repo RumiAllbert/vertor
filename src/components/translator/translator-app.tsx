@@ -564,11 +564,18 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
       });
       const cached = getCachedAlignment(cacheKey);
       if (cached !== undefined) {
-        // Apply cached result (or its null sentinel meaning "no tight match").
+        // Apply cached result, but only if the origin side's literal selection
+        // is still the one this request was fired for — guards against a race
+        // where a new selection was made between this synchronous cache lookup
+        // and the (already-scheduled) state update.
         setAlignment((prev) => {
-          if (!prev) return prev;
-          if (origin === "source") return { ...prev, tightTranslation: cached };
-          return { ...prev, tightSource: cached };
+          if (!prev || prev.origin !== origin) return prev;
+          const originTight =
+            origin === "source" ? prev.tightSource : prev.tightTranslation;
+          if (originTight?.start !== start || originTight?.end !== end) return prev;
+          return origin === "source"
+            ? { ...prev, tightTranslation: cached }
+            : { ...prev, tightSource: cached };
         });
         return;
       }
@@ -603,10 +610,17 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
               ? { start: payload.start, end: payload.end }
               : null;
           setCachedAlignment(cacheKey, tight);
+          // Same staleness guard as the cached-path above — if the user has
+          // moved on to a different selection, drop this result rather than
+          // overwrite the newer highlight.
           setAlignment((prev) => {
-            if (!prev) return prev;
-            if (origin === "source") return { ...prev, tightTranslation: tight };
-            return { ...prev, tightSource: tight };
+            if (!prev || prev.origin !== origin) return prev;
+            const originTight =
+              origin === "source" ? prev.tightSource : prev.tightTranslation;
+            if (originTight?.start !== start || originTight?.end !== end) return prev;
+            return origin === "source"
+              ? { ...prev, tightTranslation: tight }
+              : { ...prev, tightSource: tight };
           });
         } catch (err) {
           if ((err as Error).name !== "AbortError") console.error(err);

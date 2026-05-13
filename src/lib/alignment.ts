@@ -90,8 +90,10 @@ export function setCachedAlignment(
   key: string,
   value: AlignmentResult | null,
 ): void {
-  // Keep memory bounded — drop the oldest entry once we cross a soft ceiling.
-  if (cache.size > 500) {
+  // Keep memory bounded — evict the oldest entry only when we're inserting a
+  // NEW key past the ceiling. Updates to existing keys never grow the map and
+  // shouldn't evict anything.
+  if (!cache.has(key) && cache.size >= 500) {
     const firstKey = cache.keys().next().value;
     if (firstKey !== undefined) cache.delete(firstKey);
   }
