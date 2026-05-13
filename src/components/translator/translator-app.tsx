@@ -38,15 +38,38 @@ type SelectionInfo = {
 
 const CONTEXT_RADIUS = 240;
 
+// Scripts that don't separate words with whitespace: CJK ideographs, hiragana,
+// katakana, Thai, Lao, Khmer, Myanmar. For these, whitespace tells us nothing
+// about word boundaries, so classification must fall back to length and the
+// presence of paragraph breaks / sentence terminators instead.
+const SCRIPTLESS_WS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+
 function classifySelection(translation: string, start: number, end: number): VariationKind {
   const text = translation.slice(start, end).trim();
   if (!text) return "phrase";
-  if (!/\s/.test(text)) return "word";
   const before = translation.slice(0, start);
   const after = translation.slice(end);
   const beforeBoundary = !before || /\n\s*\n\s*$/.test(before) || start === 0;
   const afterBoundary = !after || /^\s*\n\s*\n/.test(after) || end === translation.length;
-  if (beforeBoundary && afterBoundary && text.length > 40) return "paragraph";
+
+  // Paragraph: selection spans a whole block and is long enough.
+  if (beforeBoundary && afterBoundary) {
+    const len = [...text].length;
+    if (SCRIPTLESS_WS.test(text)) {
+      if (len > 12) return "paragraph";
+    } else if (text.length > 40) {
+      return "paragraph";
+    }
+  }
+
+  // For CJK / Thai / etc.: no whitespace ≠ "single word". Use Unicode
+  // codepoint count — 1 ideograph is a word, anything longer is a phrase.
+  if (SCRIPTLESS_WS.test(text)) {
+    const len = [...text].length;
+    return len <= 1 ? "word" : "phrase";
+  }
+
+  if (!/\s/.test(text)) return "word";
   return "phrase";
 }
 
