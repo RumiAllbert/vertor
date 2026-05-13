@@ -1,5 +1,8 @@
 "use client";
 import * as React from "react";
+import TurndownService from "turndown";
+import { gfm as turndownGfm } from "turndown-plugin-gfm";
+import { Eye, EyeOff } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ModelPicker } from "./model-picker";
 import { LangPicker } from "./lang-picker";
@@ -25,6 +28,9 @@ import { captureRevision, listRevisions, restoreRevision, truncate } from "@/lib
 import type { Revision } from "@/lib/db/schema";
 import { HistoryPanel } from "./history-panel";
 import { DiffView } from "./diff-view";
+import { MarkdownView } from "./markdown-view";
+
+type ViewMode = "edit" | "read";
 
 type SelectionInfo = {
   text: string;
@@ -68,6 +74,27 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
   const [selection, setSelection] = React.useState<SelectionInfo | null>(null);
   const [popoverOpen, setPopoverOpen] = React.useState(false);
+
+  // Per-pane Edit/Read toggle. The editors hold raw markdown either way; Read
+  // mode swaps them for a rendered MarkdownView (headings, lists, clickable
+  // links). UI-only state — never persisted on LocalDoc.
+  const [sourceViewMode, setSourceViewMode] = React.useState<ViewMode>("edit");
+  const [translationViewMode, setTranslationViewMode] = React.useState<ViewMode>("edit");
+
+  // HTML → Markdown converter for paste events. Memoized so we don't rebuild
+  // it (and re-attach the GFM rules) on every render.
+  const turndown = React.useMemo(() => {
+    const td = new TurndownService({
+      headingStyle: "atx",
+      bulletListMarker: "-",
+      codeBlockStyle: "fenced",
+      emDelimiter: "_",
+      strongDelimiter: "**",
+      linkStyle: "inlined",
+    });
+    td.use(turndownGfm);
+    return td;
+  }, []);
 
   // Revision history state
   const [revisions, setRevisions] = React.useState<Revision[]>([]);
@@ -375,6 +402,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   }, [doc.translatedText, session.user, translating, popoverOpen, capture]);
 
   const onTranslationMouseUp = () => {
+    if (translationViewMode !== "edit") return;
     const node = translationRef.current;
     if (!node) return;
     const sel = window.getSelection();
@@ -522,9 +550,15 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   };
 
   const onTranslationPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    // Strip formatting on paste — plain text only.
+    // Convert pasted HTML (Word, Google Docs, web pages) into markdown so
+    // structure survives. Fall back to plain text otherwise. Either way we
+    // insert as a single text node — the variations feature relies on the
+    // contentEditable holding exactly one text node so DOM offsets line up
+    // with string indexing into doc.translatedText.
     e.preventDefault();
-    const text = e.clipboardData.getData("text/plain");
+    const html = e.clipboardData.getData("text/html");
+    const plain = e.clipboardData.getData("text/plain");
+    const text = html ? turndown.turndown(html) : plain;
     if (!text) return;
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
@@ -535,6 +569,24 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     sel.removeAllRanges();
     sel.addRange(range);
     e.currentTarget.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  const onSourcePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const html = e.clipboardData.getData("text/html");
+    const plain = e.clipboardData.getData("text/plain");
+    if (!html && !plain) return;
+    e.preventDefault();
+    const md = html ? turndown.turndown(html) : plain;
+    const ta = e.currentTarget;
+    const start = ta.selectionStart ?? doc.sourceText.length;
+    const end = ta.selectionEnd ?? doc.sourceText.length;
+    const next = doc.sourceText.slice(0, start) + md + doc.sourceText.slice(end);
+    updateDoc({ sourceText: next });
+    // The textarea hasn't re-rendered yet; restore the caret after React commits.
+    requestAnimationFrame(() => {
+      const caret = start + md.length;
+      ta.setSelectionRange(caret, caret);
+    });
   };
 
   const sourceLangBadge =
@@ -712,16 +764,29 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           <section className="flex min-w-0 min-h-0 flex-col">
             <div className="flex items-baseline justify-between border-b border-hairline px-10 py-3">
               <span className="small-caps">Source</span>
-              <span className="font-mono text-[10.5px] text-muted-foreground">
-                {sourceLangBadge} · {wordCount(doc.sourceText)} {wordCount(doc.sourceText) === 1 ? "word" : "words"}
-              </span>
+              <div className="flex items-baseline gap-3">
+                <span className="font-mono text-[10.5px] text-muted-foreground">
+                  {sourceLangBadge} · {wordCount(doc.sourceText)} {wordCount(doc.sourceText) === 1 ? "word" : "words"}
+                </span>
+                <ViewToggle
+                  mode={sourceViewMode}
+                  onToggle={() => setSourceViewMode((m) => (m === "edit" ? "read" : "edit"))}
+                />
+              </div>
             </div>
-            <Textarea
-              value={doc.sourceText}
-              onChange={(e) => updateDoc({ sourceText: e.target.value })}
-              placeholder="Paste or write the original here. The translation streams on the right."
-              className="editor-surface min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-10 pt-7 pb-10 shadow-none focus-visible:ring-0"
-            />
+            {sourceViewMode === "edit" ? (
+              <Textarea
+                value={doc.sourceText}
+                onChange={(e) => updateDoc({ sourceText: e.target.value })}
+                onPaste={onSourcePaste}
+                placeholder="Paste or write the original here. The translation streams on the right."
+                className="editor-surface min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-10 pt-7 pb-10 shadow-none focus-visible:ring-0"
+              />
+            ) : (
+              <div className="min-h-0 flex-1 overflow-y-auto px-10 pt-7 pb-10">
+                <MarkdownView source={doc.sourceText} />
+              </div>
+            )}
           </section>
 
           {/* Hairline divider */}
@@ -731,9 +796,16 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           <section className="flex min-w-0 min-h-0 flex-col">
             <div className="flex items-baseline justify-between border-b border-hairline px-10 py-3">
               <span className="small-caps">Translation</span>
-              <span className="font-mono text-[10.5px] text-muted-foreground">
-                {doc.targetLang} · {wordCount(doc.translatedText)} {wordCount(doc.translatedText) === 1 ? "word" : "words"}
-              </span>
+              <div className="flex items-baseline gap-3">
+                <span className="font-mono text-[10.5px] text-muted-foreground">
+                  {doc.targetLang} · {wordCount(doc.translatedText)} {wordCount(doc.translatedText) === 1 ? "word" : "words"}
+                </span>
+                <ViewToggle
+                  mode={translationViewMode}
+                  onToggle={() => setTranslationViewMode((m) => (m === "edit" ? "read" : "edit"))}
+                  disabled={translating || !doc.translatedText}
+                />
+              </div>
             </div>
             {selectedRevision ? (
               <DiffView
@@ -769,60 +841,70 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                   </figure>
                 </div>
               )}
-              <div
-                ref={translationRef}
-                contentEditable={!translating && !popoverOpen && Boolean(doc.translatedText)}
-                suppressContentEditableWarning
-                spellCheck
-                onMouseUp={onTranslationMouseUp}
-                onInput={onTranslationInput}
-                onKeyDown={onTranslationKeyDown}
-                onPaste={onTranslationPaste}
-                className="editor-surface select-text whitespace-pre-wrap px-10 pt-7 pb-10 outline-none"
-              />
+              {translationViewMode === "edit" ? (
+                <>
+                  <div
+                    ref={translationRef}
+                    contentEditable={!translating && !popoverOpen && Boolean(doc.translatedText)}
+                    suppressContentEditableWarning
+                    spellCheck
+                    onMouseUp={onTranslationMouseUp}
+                    onInput={onTranslationInput}
+                    onKeyDown={onTranslationKeyDown}
+                    onPaste={onTranslationPaste}
+                    className="editor-surface select-text whitespace-pre-wrap px-10 pt-7 pb-10 outline-none"
+                  />
 
-              {selection && !popoverOpen && (
-                <button
-                  onClick={showVariations}
-                  className="fixed z-50 inline-flex items-center gap-1.5 border border-foreground bg-background px-2.5 py-1 text-[11px] tracking-tight text-foreground shadow-[2px_2px_0_var(--ink)] transition-transform hover:translate-x-[-1px] hover:translate-y-[-1px]"
-                  style={{
-                    top: Math.max(8, selection.rect.bottom + 6),
-                    left: Math.max(8, selection.rect.left),
-                  }}
-                >
-                  <span className="font-mono text-[10px] text-ink">+3</span>
-                  <span>alternatives</span>
-                  <span className="text-[10px] italic text-muted-foreground">{selection.kind}</span>
-                </button>
+                  {selection && !popoverOpen && (
+                    <button
+                      onClick={showVariations}
+                      className="fixed z-50 inline-flex items-center gap-1.5 border border-foreground bg-background px-2.5 py-1 text-[11px] tracking-tight text-foreground shadow-[2px_2px_0_var(--ink)] transition-transform hover:translate-x-[-1px] hover:translate-y-[-1px]"
+                      style={{
+                        top: Math.max(8, selection.rect.bottom + 6),
+                        left: Math.max(8, selection.rect.left),
+                      }}
+                    >
+                      <span className="font-mono text-[10px] text-ink">+3</span>
+                      <span>alternatives</span>
+                      <span className="text-[10px] italic text-muted-foreground">{selection.kind}</span>
+                    </button>
+                  )}
+
+                  <VariationsPopover
+                    open={popoverOpen}
+                    anchor={
+                      selection
+                        ? { top: selection.rect.bottom, left: selection.rect.left }
+                        : null
+                    }
+                    selection={selection?.text ?? ""}
+                    kind={selection?.kind ?? "phrase"}
+                    sourceContext={sourceContext}
+                    translationContext={translationContext}
+                    sourceLang={doc.sourceLang === "auto" ? detectedLang ?? "auto" : doc.sourceLang}
+                    targetLang={doc.targetLang}
+                    modelId={doc.modelId}
+                    onOpenChange={(o) => {
+                      setPopoverOpen(o);
+                      if (!o) setSelection(null);
+                    }}
+                    onApply={applyReplacement}
+                    onApplyToWhole={(instruction) => {
+                      setGlobalInstruction(instruction);
+                      setShowInstruction(true);
+                      setPopoverOpen(false);
+                      setSelection(null);
+                      translate(instruction);
+                    }}
+                  />
+                </>
+              ) : (
+                doc.translatedText && (
+                  <div className="px-10 pt-7 pb-10">
+                    <MarkdownView source={doc.translatedText} />
+                  </div>
+                )
               )}
-
-              <VariationsPopover
-                open={popoverOpen}
-                anchor={
-                  selection
-                    ? { top: selection.rect.bottom, left: selection.rect.left }
-                    : null
-                }
-                selection={selection?.text ?? ""}
-                kind={selection?.kind ?? "phrase"}
-                sourceContext={sourceContext}
-                translationContext={translationContext}
-                sourceLang={doc.sourceLang === "auto" ? detectedLang ?? "auto" : doc.sourceLang}
-                targetLang={doc.targetLang}
-                modelId={doc.modelId}
-                onOpenChange={(o) => {
-                  setPopoverOpen(o);
-                  if (!o) setSelection(null);
-                }}
-                onApply={applyReplacement}
-                onApplyToWhole={(instruction) => {
-                  setGlobalInstruction(instruction);
-                  setShowInstruction(true);
-                  setPopoverOpen(false);
-                  setSelection(null);
-                  translate(instruction);
-                }}
-              />
             </div>
             )}
           </section>
@@ -907,6 +989,39 @@ function timeAgo(ts: number): string {
   if (s < 3600) return `${Math.floor(s / 60)} min ago`;
   if (s < 86400) return `${Math.floor(s / 3600)} hr ago`;
   return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/* ---------------- ViewToggle ---------------- */
+
+function ViewToggle({
+  mode,
+  onToggle,
+  disabled = false,
+}: {
+  mode: ViewMode;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  const next = mode === "edit" ? "read" : "edit";
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      aria-label={next === "read" ? "Show rendered view" : "Show raw markdown"}
+      title={next === "read" ? "Read view" : "Edit view"}
+      className={cn(
+        "inline-flex items-center text-muted-foreground transition-colors hover:text-foreground",
+        "disabled:cursor-not-allowed disabled:opacity-40",
+      )}
+    >
+      {mode === "edit" ? (
+        <Eye className="h-3.5 w-3.5" />
+      ) : (
+        <EyeOff className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
 }
 
 /* helpers */

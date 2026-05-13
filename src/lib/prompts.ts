@@ -6,10 +6,11 @@ export function translationSystem(targetLang: string, instruction?: string) {
     `Translate the user's text into ${languageName(targetLang)}.`,
     `Preserve the author's voice, tone, register, and rhythm.`,
     `Preserve paragraph breaks exactly. Do not add or remove paragraphs.`,
-    `Preserve markdown, code, citations, numbers, and proper nouns unless translation is required.`,
+    `Preserve all markdown formatting exactly: ATX headings (#, ##, ###, etc. with the same depth), bullet lists (- item) and numbered lists (1. item) including nesting and ordering, bold (**text**) and italic (*text* or _text_) emphasis, inline code (\`code\`) and fenced code blocks, blockquotes (>), and hyperlinks in the form [link text](https://url). Translate the visible text inside these constructs; never translate URLs, code, or numeric list markers.`,
+    `Preserve citations, numbers, and proper nouns unless translation is required.`,
     `Translate idioms naturally; do not calque.`,
     `Do not add commentary, notes, prefaces, or quotation marks around the result.`,
-    `Output ONLY the translation as plain text.`,
+    `Output ONLY the translation as markdown text (same syntax as the input).`,
   ];
   if (instruction?.trim()) {
     base.push(`Additional instructions from the user (apply throughout): ${instruction.trim()}`);
