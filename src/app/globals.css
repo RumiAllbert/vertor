@@ -385,6 +385,22 @@ svg.lucide,
   background-color: color-mix(in oklch, var(--ink) 22%, transparent);
 }
 
+/* Cross-pane alignment overlay. Paragraph variant is faint context; tight
+ * variant gets a hairline outline so the LLM-tightened span reads as a
+ * deliberate refinement. */
+.alignment-rect {
+  border-radius: 2px;
+  transition: opacity 220ms ease, background-color 260ms ease, outline-color 260ms ease;
+  pointer-events: none;
+}
+.alignment-rect.is-paragraph {
+  background-color: color-mix(in oklch, var(--ink) 6%, transparent);
+}
+.alignment-rect.is-tight {
+  background-color: color-mix(in oklch, var(--ink) 18%, transparent);
+  outline: 1px solid color-mix(in oklch, var(--ink) 32%, transparent);
+}
+
 /* Blur reveal — for the empty-state quote. */
 @keyframes blurUp {
   from { opacity: 0; filter: blur(8px); transform: translateY(6px); }
