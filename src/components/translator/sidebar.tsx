@@ -145,8 +145,12 @@ export function HistorySidebar({
                 </div>
 
                 {isArmed ? (
-                  // Two side-by-side micro-actions when armed: confirm + cancel.
-                  <div className="flex shrink-0 items-center gap-2 text-[10px]">
+                  // Confirmation step: a filled destructive button + a clear
+                  // cancel. The arm/confirm pattern means every delete is
+                  // two-click — accidental clicks can always be rescued via
+                  // Cancel or by clicking anywhere else (auto-disarms after
+                  // 4s).
+                  <div className="flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -154,20 +158,18 @@ export function HistorySidebar({
                         disarm();
                         onDelete(d.id);
                       }}
-                      className="font-medium text-destructive transition-colors hover:underline"
+                      className="inline-flex h-6 items-center rounded-sm bg-destructive px-2 text-[11px] font-medium text-destructive-foreground shadow-[1.5px_1.5px_0_var(--ink)] transition-transform hover:translate-x-[-1px] hover:translate-y-[-1px]"
+                      autoFocus
                     >
-                      delete?
+                      Delete
                     </button>
-                    <span aria-hidden className="text-muted-foreground/50">
-                      ·
-                    </span>
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         disarm();
                       }}
-                      className="italic text-muted-foreground transition-colors hover:text-foreground"
+                      className="inline-flex h-6 items-center rounded-sm px-1.5 text-[11px] italic text-muted-foreground transition-colors hover:text-foreground"
                     >
                       cancel
                     </button>
@@ -180,18 +182,14 @@ export function HistorySidebar({
                       arm(d.id);
                     }}
                     className={cn(
-                      "shrink-0 inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-all",
-                      // Always faintly visible so the affordance is discoverable
-                      // even before hover; brightens on row/button hover and on
-                      // keyboard focus.
-                      "opacity-40 group-hover:opacity-100 group-focus-within:opacity-100",
-                      "hover:bg-destructive/10 hover:text-destructive hover:opacity-100",
-                      "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                      "shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-sm text-muted-foreground transition-colors",
+                      "hover:bg-destructive/10 hover:text-destructive",
+                      "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                     )}
                     title="Delete document"
                     aria-label={`Delete ${d.title}`}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 )}
               </div>
