@@ -10,7 +10,7 @@ export function MarketingHeader({ session }: { session: SessionInfo }) {
       <Link href="/" className="display text-[20px] leading-none">
         Vertor
       </Link>
-      <nav className="flex items-center gap-5 text-[12px]">
+      <nav className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5 text-[12px] md:gap-5">
         <ThemeToggle />
         {session.enabled && !session.user && (
           <a

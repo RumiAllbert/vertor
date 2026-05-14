@@ -176,6 +176,30 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const milestonesHydratedRef = React.useRef(false);
   const earnedStampTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // On mobile the two panes become a tabbed view showing one at a time.
+  const [mobilePane, setMobilePane] = React.useState<"source" | "translation">("source");
+  // Sidebar is open by default on desktop; collapse it on small screens after mount
+  // to avoid the overlay drawer covering the editor (no SSR hydration mismatch).
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (window.innerWidth < 768) setSidebarOpen(false);
+  }, []);
+
+  // One-time notice (mobile only, via md:hidden) that Vertor is built for desktop.
+  const [mobileNoticeOpen, setMobileNoticeOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (localStorage.getItem("vertor:mobile-notice") !== "dismissed") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMobileNoticeOpen(true);
+    }
+  }, []);
+  const dismissMobileNotice = () => {
+    setMobileNoticeOpen(false);
+    try {
+      localStorage.setItem("vertor:mobile-notice", "dismissed");
+    } catch {}
+  };
+
   const copyTranslation = React.useCallback(async () => {
     if (!doc.translatedText) return;
     try {
@@ -562,6 +586,8 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const translate = React.useCallback(
     async (overrideInstruction?: string) => {
       if (!doc.sourceText.trim()) return;
+      // On mobile, surface the translation tab so the streaming result is visible.
+      setMobilePane("translation");
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -1009,7 +1035,13 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
         <EarnedStampToast milestone={earnedStamp} onClose={() => setEarnedStamp(null)} />
       )}
       {sidebarOpen && (
-        <div className="flex h-full w-[252px] shrink-0 flex-col border-r border-hairline bg-muted/40">
+        <div
+          className="fixed inset-0 z-30 bg-foreground/20 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      {sidebarOpen && (
+        <div className="fixed inset-y-0 left-0 z-40 flex h-full w-[252px] max-w-[85vw] flex-col border-r border-hairline bg-background md:static md:z-auto md:shrink-0 md:bg-muted/40">
           {session.user && pendingLocalDocs.length > 0 && (
             <MigrateBanner
               localDocs={pendingLocalDocs}
@@ -1048,7 +1080,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
       <main className="flex min-w-0 flex-1 flex-col">
         {/* Top bar — typographic, hairline-divided */}
-        <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-hairline px-6 py-3">
+        <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-hairline px-3 py-3 md:px-6">
           <button
             onClick={() => setSidebarOpen((o) => !o)}
             aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
@@ -1103,7 +1135,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           )}
 
           {/* Vertical hairline */}
-          <span className="h-5 w-px bg-hairline" />
+          <span className="hidden h-5 w-px bg-hairline md:block" />
 
           <button
             onClick={() => translate()}
@@ -1167,11 +1199,42 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           />
         )}
 
+        {/* Mobile pane toggle — desktop shows both panes side by side */}
+        <div className="flex border-b border-hairline md:hidden">
+          <button
+            onClick={() => setMobilePane("source")}
+            className={cn(
+              "small-caps flex-1 py-2 text-[12px] transition-colors",
+              mobilePane === "source"
+                ? "border-b-2 border-ink text-ink"
+                : "text-muted-foreground",
+            )}
+          >
+            Source
+          </button>
+          <button
+            onClick={() => setMobilePane("translation")}
+            className={cn(
+              "small-caps flex-1 py-2 text-[12px] transition-colors",
+              mobilePane === "translation"
+                ? "border-b-2 border-ink text-ink"
+                : "text-muted-foreground",
+            )}
+          >
+            Translation
+          </button>
+        </div>
+
         {/* Two-pane editor */}
-        <div ref={containerRef} className="relative grid min-h-0 flex-1 grid-cols-2">
+        <div ref={containerRef} className="relative grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
           {/* Source */}
-          <section className="flex min-w-0 min-h-0 flex-col">
-            <div className="flex items-baseline justify-between border-b border-hairline px-10 py-3">
+          <section
+            className={cn(
+              "flex min-w-0 min-h-0 flex-col",
+              mobilePane !== "source" && "hidden md:flex",
+            )}
+          >
+            <div className="flex items-baseline justify-between border-b border-hairline px-4 py-3 md:px-10">
               <span className="small-caps">Source</span>
               <div className="flex items-baseline gap-3">
                 <span className="font-mono text-[10.5px] text-muted-foreground">
@@ -1191,7 +1254,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                 onPaste={onSourcePaste}
                 onSelect={onSourceSelect}
                 placeholder="Paste or write the original here. The translation streams on the right."
-                className="editor-surface min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-10 pt-7 pb-10 shadow-none focus-visible:ring-0"
+                className="editor-surface min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-4 pt-7 pb-10 shadow-none focus-visible:ring-0 md:px-10"
               />
             ) : (
               <div
@@ -1209,7 +1272,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                     showReadHint(e, "source");
                   }
                 }}
-                className="min-h-0 flex-1 overflow-y-auto px-10 pt-7 pb-10 outline-none"
+                className="min-h-0 flex-1 overflow-y-auto px-4 pt-7 pb-10 outline-none md:px-10"
               >
                 <MarkdownView source={doc.sourceText} />
               </div>
@@ -1217,11 +1280,16 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           </section>
 
           {/* Hairline divider */}
-          <span aria-hidden className="absolute left-1/2 top-0 bottom-0 -translate-x-1/2 w-px bg-hairline" />
+          <span aria-hidden className="hidden md:block absolute left-1/2 top-0 bottom-0 -translate-x-1/2 w-px bg-hairline" />
 
           {/* Translation */}
-          <section className="flex min-w-0 min-h-0 flex-col">
-            <div className="flex items-baseline justify-between gap-3 border-b border-hairline px-10 py-3">
+          <section
+            className={cn(
+              "flex min-w-0 min-h-0 flex-col",
+              mobilePane !== "translation" && "hidden md:flex",
+            )}
+          >
+            <div className="flex items-baseline justify-between gap-3 border-b border-hairline px-4 py-3 md:px-10">
               <span className="small-caps">Translation</span>
               <div className="flex items-center gap-3">
                 <span className="font-mono text-[10.5px] text-muted-foreground">
@@ -1286,7 +1354,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             ) : (
             <div className="relative min-h-0 flex-1 overflow-y-auto">
               {!doc.translatedText && !translating && (
-                <div className="flex h-full items-center justify-center px-12">
+                <div className="flex h-full items-center justify-center px-4 md:px-12">
                   <figure className="max-w-[28ch] text-center">
                     <blockquote
                       className="display blur-up text-[28px] leading-[1.2] text-foreground/80"
@@ -1320,7 +1388,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                     onInput={onTranslationInput}
                     onKeyDown={onTranslationKeyDown}
                     onPaste={onTranslationPaste}
-                    className="editor-surface select-text whitespace-pre-wrap px-10 pt-7 pb-10 outline-none"
+                    className="editor-surface select-text whitespace-pre-wrap px-4 pt-7 pb-10 outline-none md:px-10"
                   />
 
                   {selection && !popoverOpen && (
@@ -1329,7 +1397,13 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                       className="fixed z-50 inline-flex items-center gap-1.5 border border-foreground bg-background px-2.5 py-1 text-[11px] tracking-tight text-foreground shadow-[2px_2px_0_var(--ink)] transition-transform hover:translate-x-[-1px] hover:translate-y-[-1px]"
                       style={{
                         top: Math.max(8, selection.rect.bottom + 6),
-                        left: Math.max(8, selection.rect.left),
+                        left: Math.min(
+                          Math.max(8, selection.rect.left),
+                          Math.max(
+                            8,
+                            (typeof window !== "undefined" ? window.innerWidth : 9999) - 220,
+                          ),
+                        ),
                       }}
                     >
                       <span className="font-mono text-[10px] text-ink">+3</span>
@@ -1383,7 +1457,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                         showReadHint(e, "translation");
                       }
                     }}
-                    className="px-10 pt-7 pb-10 outline-none"
+                    className="px-4 pt-7 pb-10 outline-none md:px-10"
                   >
                     <MarkdownView source={doc.translatedText} />
                   </div>
@@ -1416,7 +1490,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           />
         )}
 
-        <footer className="flex shrink-0 items-baseline justify-between gap-2 border-t border-hairline bg-background px-6 py-2">
+        <footer className="flex shrink-0 items-baseline justify-between gap-2 border-t border-hairline bg-background px-3 py-2 md:px-6">
           <span className="text-[10.5px] italic text-muted-foreground">
             {translating
               ? "Streaming…"
@@ -1446,15 +1520,45 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
       )}
 
       {historyOpen && session.user && (
-        <HistoryPanel
-          revisions={revisions}
-          selectedRevisionId={selectedRevision?.id ?? null}
-          onSelect={setSelectedRevision}
-          onClose={() => {
-            setHistoryOpen(false);
-            setSelectedRevision(null);
-          }}
-        />
+        <>
+          <div
+            className="fixed inset-0 z-30 bg-foreground/20 md:hidden"
+            onClick={() => {
+              setHistoryOpen(false);
+              setSelectedRevision(null);
+            }}
+          />
+          <HistoryPanel
+            revisions={revisions}
+            selectedRevisionId={selectedRevision?.id ?? null}
+            onSelect={setSelectedRevision}
+            onClose={() => {
+              setHistoryOpen(false);
+              setSelectedRevision(null);
+            }}
+          />
+        </>
+      )}
+
+      {mobileNoticeOpen && (
+        <div
+          role="status"
+          className="fade-up fixed inset-x-3 bottom-4 z-50 flex items-start gap-3 border border-foreground bg-background px-3.5 py-3 text-[12px] shadow-[2px_2px_0_var(--ink)] md:hidden"
+        >
+          <p className="flex-1 leading-snug text-muted-foreground">
+            Vertor works on mobile, but it&apos;s designed for a{" "}
+            <span className="font-medium text-foreground">desktop</span> screen — open it
+            on a larger display for the full side-by-side experience.
+          </p>
+          <button
+            type="button"
+            onClick={dismissMobileNotice}
+            aria-label="Dismiss"
+            className="shrink-0 text-[16px] leading-none text-muted-foreground transition-colors hover:text-foreground"
+          >
+            ×
+          </button>
+        </div>
       )}
     </div>
   );

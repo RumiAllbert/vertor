@@ -33,7 +33,7 @@ type Props = {
 
 export function HistoryPanel({ revisions, selectedRevisionId, onSelect, onClose }: Props) {
   return (
-    <aside className="flex h-full w-[320px] shrink-0 flex-col border-l border-hairline bg-muted/40">
+    <aside className="fixed inset-y-0 right-0 z-40 flex h-full w-[320px] max-w-[88vw] flex-col border-l border-hairline bg-background md:static md:z-auto md:shrink-0 md:bg-muted/40">
       <div className="flex items-baseline justify-between border-b border-hairline px-5 py-4">
         <div>
           <h2 className="display text-[20px] leading-none">History</h2>

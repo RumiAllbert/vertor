@@ -92,7 +92,7 @@ export function VariationsPopover(props: Props) {
         side="bottom"
         align="start"
         sideOffset={10}
-        className="w-[460px] overflow-hidden border-hairline p-0"
+        className="w-[calc(100vw-1.5rem)] max-w-[460px] overflow-hidden border-hairline p-0 md:w-[460px]"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <div className="flex items-baseline justify-between gap-3 border-b border-hairline px-4 py-2.5">
