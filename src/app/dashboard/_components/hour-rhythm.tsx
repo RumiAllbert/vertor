@@ -20,6 +20,7 @@ export function HourRhythm({
 }) {
   const max = rhythm.reduce((m, n) => (n > m ? n : m), 0);
   const total = rhythm.reduce((s, n) => s + n, 0);
+  const hourColors = ["#1f4f8f", "#0056e3", "#12a594", "#f4a261", "#e85d75", "#8f3f97"];
   return (
     <div>
       <div className="grid h-20 grid-cols-24 items-end gap-px" style={{ gridTemplateColumns: "repeat(24, minmax(0, 1fr))" }}>
@@ -27,6 +28,7 @@ export function HourRhythm({
           const ratio = max > 0 ? n / max : 0;
           const heightPct = n === 0 ? 4 : Math.max(8, Math.round(ratio * 100));
           const isPeak = h === peakHour;
+          const color = hourColors[Math.floor(h / 4) % hourColors.length];
           return (
             <div
               key={h}
@@ -42,8 +44,8 @@ export function HourRhythm({
                 </span>
               )}
               <div
-                className={n > 0 ? "w-full rounded-[1px] bg-ink/70" : "w-full bg-hairline"}
-                style={{ height: `${heightPct}%` }}
+                className={n > 0 ? "w-full rounded-[1px]" : "w-full bg-hairline"}
+                style={{ height: `${heightPct}%`, backgroundColor: n > 0 ? color : undefined }}
               />
             </div>
           );

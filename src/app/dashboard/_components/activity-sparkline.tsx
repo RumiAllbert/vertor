@@ -3,6 +3,7 @@ export function ActivitySparkline({ data }: { data: { day: string; count: number
   const barCount = data.length;
   const barWidth = 100 / barCount;
   const gap = barWidth * 0.25;
+  const colors = ["#0056e3", "#12a594", "#e85d75", "#f4a261"];
 
   return (
     <svg
@@ -18,6 +19,7 @@ export function ActivitySparkline({ data }: { data: { day: string; count: number
         const x = i * barWidth + gap / 2;
         const y = 32 - h;
         const w = barWidth - gap;
+        const fill = d.count > 0 ? colors[i % colors.length] : "var(--hairline)";
         return (
           <rect
             key={d.day}
@@ -25,7 +27,7 @@ export function ActivitySparkline({ data }: { data: { day: string; count: number
             y={y}
             width={w}
             height={Math.max(h, d.count > 0 ? 0.6 : 0)}
-            fill={d.count > 0 ? "var(--ink)" : "var(--hairline)"}
+            fill={fill}
           >
             <title>{`${d.day} — ${d.count} translation${d.count === 1 ? "" : "s"}`}</title>
           </rect>

@@ -19,8 +19,26 @@ export function PersonalityCard({
   // this automatically on each load).
   const pending = !personality && reachedThreshold;
 
+  const traitColors = ["#0056e3", "#e85d75", "#12a594", "#f4a261"];
+
   return (
-    <div className="relative rounded-md border border-hairline bg-card px-8 py-10 md:px-12 md:py-14">
+    <div className="relative overflow-hidden rounded-md border border-hairline bg-card/88 px-8 py-10 shadow-[0_24px_90px_color-mix(in_oklch,var(--ink)_10%,transparent)] backdrop-blur-[2px] md:px-12 md:py-14">
+      <div
+        aria-hidden
+        className="absolute -right-16 -top-24 h-56 w-56 rounded-full opacity-25 blur-2xl"
+        style={{
+          background:
+            "conic-gradient(from 120deg, #0056e3, #e85d75, #f4a261, #12a594, #0056e3)",
+        }}
+      />
+      <div aria-hidden className="absolute bottom-6 right-7 hidden rotate-[-10deg] md:block">
+        <div className="grid h-24 w-24 place-items-center rounded-full border border-ink/25 bg-background/65 shadow-[0_16px_48px_color-mix(in_oklch,var(--ink)_14%,transparent)]">
+          <span className="display text-[52px] leading-none text-ink/80">
+            {unlocked ? personality.title.charAt(0) : "V"}
+          </span>
+        </div>
+      </div>
+
       <div className="mb-4 text-[10.5px] uppercase tracking-[0.2em] text-muted-foreground">
         Translator personality
       </div>
@@ -33,9 +51,23 @@ export function PersonalityCard({
           <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-foreground/90">
             {personality.blurb}
           </p>
-          <p className="mt-5 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            {personality.traits.map((t) => t.toLowerCase()).join("  ·  ")}
-          </p>
+          <ul className="mt-6 flex max-w-2xl flex-wrap gap-2.5">
+            {personality.traits.map((trait, index) => (
+              <li
+                key={trait}
+                className="rotate-[-1deg] rounded-[4px] border px-2.5 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] shadow-[0_10px_30px_color-mix(in_oklch,var(--trait-accent)_12%,transparent)] even:rotate-[1deg]"
+                style={{
+                  "--trait-accent": traitColors[index % traitColors.length],
+                  borderColor: "color-mix(in oklch, var(--trait-accent) 42%, var(--hairline))",
+                  background:
+                    "color-mix(in oklch, var(--trait-accent) 11%, var(--background))",
+                  color: "color-mix(in oklch, var(--trait-accent) 68%, var(--foreground))",
+                } as React.CSSProperties}
+              >
+                {trait.toLowerCase()}
+              </li>
+            ))}
+          </ul>
           <p className="mt-6 text-[11px] italic text-muted-foreground">
             Refreshes every {threshold} translations · last updated {formatRelative(personality.generatedAt)}
           </p>
@@ -63,9 +95,9 @@ export function PersonalityCard({
           <p className="mt-3 text-[13px] italic text-muted-foreground">
             {remaining} to go — keep translating.
           </p>
-          <div className="mt-7 h-px w-full bg-hairline">
+          <div className="mt-7 h-1 w-full overflow-hidden rounded-full bg-hairline/70">
             <div
-              className="h-px bg-ink transition-all"
+              className="h-full rounded-full bg-[linear-gradient(90deg,#0056e3,#e85d75,#f4a261)] transition-all"
               style={{ width: `${Math.round(progress * 100)}%` }}
             />
           </div>

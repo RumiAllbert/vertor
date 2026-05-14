@@ -1,8 +1,28 @@
 import { cn } from "@/lib/utils";
 import type { Milestone } from "@/lib/stats";
 
-// Passport-style stamps. Earned ones rendered in ink, unearned in hairline
-// gray. Hover to read the unlock condition.
+const STAMP_INDEX: Record<string, number> = {
+  "first-voyage": 0,
+  polyglot: 1,
+  marathon: 2,
+  "week-streak": 3,
+  "night-owl": 4,
+  "sunday-translator": 5,
+  centennial: 6,
+};
+
+const STAMP_ACCENTS = [
+  "#0056e3",
+  "#12a594",
+  "#e85d75",
+  "#8f3f97",
+  "#1f4f8f",
+  "#f4a261",
+  "#d84a4a",
+];
+
+// Passport-style stamps backed by the generated sticker sprite in /public.
+// Earned stamps are saturated; locked ones stay ghosted but keep their shape.
 export function Milestones({ items }: { items: Milestone[] }) {
   const earned = items.filter((m) => m.earned).length;
   return (
@@ -13,30 +33,48 @@ export function Milestones({ items }: { items: Milestone[] }) {
           {earned} <span className="text-muted-foreground">/ {items.length}</span>
         </span>
       </div>
-      <ul className="flex flex-wrap gap-3">
-        {items.map((m) => (
-          <li
-            key={m.id}
-            title={m.hint}
-            className={cn(
-              "group relative inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[12px] transition-colors",
-              m.earned
-                ? "border-ink/70 bg-ink/[0.04] text-foreground"
-                : "border-hairline text-muted-foreground/70",
-            )}
-          >
-            <span
-              aria-hidden
+      <ul className="flex flex-wrap gap-3.5">
+        {items.map((m) => {
+          const stampIndex = STAMP_INDEX[m.id] ?? 0;
+          const accent = STAMP_ACCENTS[stampIndex % STAMP_ACCENTS.length];
+          return (
+            <li
+              key={m.id}
+              title={m.hint}
               className={cn(
-                "inline-block h-1.5 w-1.5 rounded-full",
-                m.earned ? "bg-ink" : "bg-muted-foreground/40",
+                "dashboard-stamp group relative inline-flex min-h-16 w-[148px] items-center gap-2 overflow-hidden rounded-[6px] border px-2.5 py-2 text-[12px] shadow-[0_14px_38px_color-mix(in_oklch,var(--stamp-accent)_11%,transparent)] transition duration-200 hover:-translate-y-0.5 hover:rotate-0 hover:shadow-[0_18px_48px_color-mix(in_oklch,var(--stamp-accent)_18%,transparent)]",
+                m.earned
+                  ? "border-[color-mix(in_oklch,var(--stamp-accent)_48%,var(--hairline))] bg-[color-mix(in_oklch,var(--stamp-accent)_9%,var(--background))] text-foreground"
+                  : "border-hairline bg-background/60 text-muted-foreground/70 grayscale",
               )}
-            />
-            <span className={cn("italic", m.earned ? "" : "line-through decoration-hairline")}>
-              {m.label}
-            </span>
-          </li>
-        ))}
+              style={{
+                "--stamp-accent": accent,
+                "--stamp-index": stampIndex,
+                transform: `rotate(${stampIndex % 2 === 0 ? "-1.4deg" : "1.1deg"})`,
+              } as React.CSSProperties}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "dashboard-stamp-art h-12 w-12 shrink-0 drop-shadow-[0_7px_12px_color-mix(in_oklch,var(--stamp-accent)_18%,transparent)] transition duration-200 group-hover:scale-105",
+                  m.earned ? "" : "opacity-[0.42]",
+                )}
+                style={{
+                  backgroundImage: "url('/dashboard/stamp-sprite.png')",
+                  backgroundPosition: `${(stampIndex / 6) * 100}% 50%`,
+                }}
+              />
+              <span
+                className={cn(
+                  "relative z-10 italic leading-tight",
+                  m.earned ? "" : "line-through decoration-hairline",
+                )}
+              >
+                {m.label}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
