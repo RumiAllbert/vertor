@@ -3,7 +3,7 @@ import Link from "next/link";
 import { auth, authEnabled } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { computeStats, type StatDoc, WEEKDAYS } from "@/lib/stats";
+import { computeStats, type StatDoc, WEEKDAYS, wordEquivalent } from "@/lib/stats";
 import { languageName } from "@/lib/languages";
 import {
   maybeGeneratePersonality,
@@ -17,16 +17,24 @@ import { LanguageBars } from "./_components/language-bars";
 import { ActivitySparkline } from "./_components/activity-sparkline";
 import { ModelsList } from "./_components/models-list";
 import { RecentList } from "./_components/recent-list";
+import { YearHeatmap } from "./_components/year-heatmap";
+import { Milestones } from "./_components/milestones";
+import { HourRhythm } from "./_components/hour-rhythm";
+import { SoftAurora } from "@/components/landing/soft-aurora";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// "Good night" is a *farewell*, not a hello — keep this list to greetings the
+// reader can be welcomed with at any hour they actually open the page.
 function greet(d: Date): string {
   const h = d.getHours();
-  if (h < 5) return "Good night";
+  if (h < 3) return "Still up";
+  if (h < 5) return "Up early";
   if (h < 12) return "Good morning";
   if (h < 18) return "Good afternoon";
-  return "Good evening";
+  if (h < 22) return "Good evening";
+  return "Burning the midnight oil";
 }
 
 function firstName(name?: string | null, email?: string | null): string {
@@ -115,7 +123,30 @@ export default async function DashboardPage() {
       </header>
 
       <main className="mx-auto w-full max-w-5xl px-8 pb-24 pt-14 md:px-12">
-        <section className="mb-12">
+        <section className="relative mb-12 isolate overflow-hidden">
+          {/* Soft aurora wash behind the greeting — masked to fade out at the
+              edges so it never competes with the stats below. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-[-10%] -top-24 -z-10 h-72 opacity-60"
+            style={{
+              WebkitMaskImage:
+                "radial-gradient(ellipse 60% 55% at 30% 50%, black 0%, rgba(0,0,0,0.55) 55%, transparent 85%)",
+              maskImage:
+                "radial-gradient(ellipse 60% 55% at 30% 50%, black 0%, rgba(0,0,0,0.55) 55%, transparent 85%)",
+            }}
+          >
+            <SoftAurora
+              color1="#0056e3"
+              color2="#e864fa"
+              speed={0.25}
+              scale={0.55}
+              brightness={0.55}
+              noiseFrequency={3}
+              noiseAmplitude={1}
+              bandHeight={0.4}
+            />
+          </div>
           <h1 className="display text-[44px] italic leading-[1.05] md:text-[56px]">
             {greet(new Date())}, {firstName(userRow?.name, userRow?.email)}.
           </h1>
@@ -130,9 +161,21 @@ export default async function DashboardPage() {
           <>
             <section className="mb-14 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-hairline bg-hairline md:grid-cols-4">
               <KpiCard label="Translations" value={stats.totalDocs.toLocaleString()} />
-              <KpiCard label="Words translated" value={stats.totalWords.toLocaleString()} />
+              <KpiCard
+                label="Words translated"
+                value={stats.totalWords.toLocaleString()}
+                hint={wordEquivalent(stats.totalWords)}
+              />
               <KpiCard label="Languages reached" value={stats.languagesReached.toLocaleString()} />
-              <KpiCard label="Avg words / doc" value={stats.avgWordsPerDoc.toLocaleString()} />
+              <KpiCard
+                label="Current streak"
+                value={`${stats.currentStreak} ${stats.currentStreak === 1 ? "day" : "days"}`}
+                hint={
+                  stats.longestStreak > 0
+                    ? `Best yet · ${stats.longestStreak} day${stats.longestStreak === 1 ? "" : "s"}`
+                    : null
+                }
+              />
             </section>
 
             <section className="mb-14">
@@ -141,6 +184,15 @@ export default async function DashboardPage() {
                 totalDocs={stats.totalDocs}
                 threshold={PERSONALITY_UNLOCK_THRESHOLD}
               />
+            </section>
+
+            <section className="mb-14">
+              <Milestones items={stats.milestones} />
+            </section>
+
+            <section className="mb-14">
+              <SectionLabel>The year in glance</SectionLabel>
+              <YearHeatmap data={stats.activityYear} />
             </section>
 
             <div className="grid gap-14 md:grid-cols-2">
@@ -157,7 +209,7 @@ export default async function DashboardPage() {
               </section>
 
               <section>
-                <SectionLabel>Activity · last 30 days</SectionLabel>
+                <SectionLabel>The last 30 days</SectionLabel>
                 <ActivitySparkline data={stats.activityLast30} />
                 <p className="mt-3 text-[12px] italic text-muted-foreground">
                   <span className="not-italic text-foreground">{totalActivity30}</span> in window
@@ -170,6 +222,11 @@ export default async function DashboardPage() {
                     </>
                   )}
                 </p>
+              </section>
+
+              <section>
+                <SectionLabel>Hours of the day</SectionLabel>
+                <HourRhythm rhythm={stats.hourRhythm} peakHour={stats.peakHour} />
               </section>
 
               <section>
