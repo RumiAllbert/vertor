@@ -14,19 +14,35 @@ export type StatDoc = {
   updatedAt: Date;
 };
 
+export type Milestone = {
+  id: string;
+  label: string;
+  // One-line hint describing what unlocks it. Shown on hover / for unearned.
+  hint: string;
+  earned: boolean;
+};
+
 export type UserStats = {
   totalDocs: number;
   totalWords: number;
   languagesReached: number;
   avgWordsPerDoc: number;
+  currentStreak: number;
+  longestStreak: number;
   memberSince: Date | null;
   topLanguages: { code: string; name: string; count: number; pct: number }[];
   topPair: { source: string; target: string; sourceName: string; targetName: string; count: number } | null;
   activityLast30: { day: string; count: number }[];
+  activityYear: { day: string; count: number }[];
+  // Length-24 array — count of translations created in each hour-of-day.
+  hourRhythm: number[];
+  // Hour (0-23) with the most translations, or null when there's no data.
+  peakHour: number | null;
   mostActiveWeekday: number | null;
   modelsUsed: { id: string; name: string; count: number; pct: number }[];
   longest: { id: string; title: string; words: number } | null;
   recent: { id: string; title: string; sourceLang: string; targetLang: string; updatedAt: Date }[];
+  milestones: Milestone[];
 };
 
 export function wordCount(text: string): number {
@@ -40,6 +56,101 @@ function isoDay(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Compute current streak (consecutive days ending today/yesterday with ≥1 doc)
+// and the longest streak ever. A streak survives a single empty "today" — if
+// the user hasn't translated today yet but did yesterday, the streak counts.
+function computeStreaks(
+  daysWithActivity: Set<string>,
+  now: Date,
+): { current: number; longest: number } {
+  if (daysWithActivity.size === 0) return { current: 0, longest: 0 };
+
+  // Sort the ISO day strings — lexicographic order matches chronological for
+  // YYYY-MM-DD.
+  const days = Array.from(daysWithActivity).sort();
+  // Longest run anywhere in history
+  let longest = 1;
+  let run = 1;
+  for (let i = 1; i < days.length; i++) {
+    const prev = new Date(days[i - 1] + "T00:00:00Z");
+    const curr = new Date(days[i] + "T00:00:00Z");
+    const diff = Math.round((curr.getTime() - prev.getTime()) / 86_400_000);
+    if (diff === 1) run += 1;
+    else run = 1;
+    if (run > longest) longest = run;
+  }
+
+  // Current streak — walk backwards from today (or yesterday if today empty).
+  const today = new Date(now);
+  today.setUTCHours(0, 0, 0, 0);
+  let cursor = today;
+  if (!daysWithActivity.has(isoDay(cursor))) {
+    cursor = new Date(cursor.getTime() - 86_400_000);
+    if (!daysWithActivity.has(isoDay(cursor))) return { current: 0, longest };
+  }
+  let current = 0;
+  while (daysWithActivity.has(isoDay(cursor))) {
+    current += 1;
+    cursor = new Date(cursor.getTime() - 86_400_000);
+  }
+  return { current, longest };
+}
+
+function computeMilestones(args: {
+  totalDocs: number;
+  totalWords: number;
+  languagesReached: number;
+  longestStreak: number;
+  nightOwlDocs: number;
+  weekendDocs: number;
+}): Milestone[] {
+  const M: Milestone[] = [
+    {
+      id: "first-voyage",
+      label: "First voyage",
+      hint: "Your first translation.",
+      earned: args.totalDocs >= 1,
+    },
+    {
+      id: "polyglot",
+      label: "Polyglot",
+      hint: "Translate into five different languages.",
+      earned: args.languagesReached >= 5,
+    },
+    {
+      id: "marathon",
+      label: "Marathon",
+      hint: "Translate ten thousand words.",
+      earned: args.totalWords >= 10_000,
+    },
+    {
+      id: "week-streak",
+      label: "Seven-day streak",
+      hint: "Translate on seven consecutive days.",
+      earned: args.longestStreak >= 7,
+    },
+    {
+      id: "night-owl",
+      label: "Night owl",
+      hint: "Five translations begun between 10pm and 5am.",
+      earned: args.nightOwlDocs >= 5,
+    },
+    {
+      id: "sunday-translator",
+      label: "Weekend translator",
+      hint: "Five translations on a Saturday or Sunday.",
+      earned: args.weekendDocs >= 5,
+    },
+    {
+      id: "centennial",
+      label: "Centennial",
+      hint: "One hundred translations.",
+      earned: args.totalDocs >= 100,
+    },
+  ];
+  return M;
+}
+
 export function computeStats(docs: StatDoc[], memberSince: Date | null, now = new Date()): UserStats {
   if (docs.length === 0) {
     return {
@@ -47,14 +158,27 @@ export function computeStats(docs: StatDoc[], memberSince: Date | null, now = ne
       totalWords: 0,
       languagesReached: 0,
       avgWordsPerDoc: 0,
+      currentStreak: 0,
+      longestStreak: 0,
       memberSince,
       topLanguages: [],
       topPair: null,
       activityLast30: buildEmptyWindow(now, 30),
+      activityYear: buildEmptyWindow(now, 365),
+      hourRhythm: new Array(24).fill(0),
+      peakHour: null,
       mostActiveWeekday: null,
       modelsUsed: [],
       longest: null,
       recent: [],
+      milestones: computeMilestones({
+        totalDocs: 0,
+        totalWords: 0,
+        languagesReached: 0,
+        longestStreak: 0,
+        nightOwlDocs: 0,
+        weekendDocs: 0,
+      }),
     };
   }
 
@@ -98,12 +222,30 @@ export function computeStats(docs: StatDoc[], memberSince: Date | null, now = ne
     }
   }
 
-  const window = buildEmptyWindow(now, 30);
-  const windowIndex = new Map(window.map((row, i) => [row.day, i]));
+  // 30-day and 365-day windows share their bucket-fill loop.
+  const window30 = buildEmptyWindow(now, 30);
+  const window30Index = new Map(window30.map((row, i) => [row.day, i]));
+  const window365 = buildEmptyWindow(now, 365);
+  const window365Index = new Map(window365.map((row, i) => [row.day, i]));
+
+  const daysWithActivity = new Set<string>();
+  const hourRhythm = new Array(24).fill(0);
+  let nightOwlDocs = 0;
+  let weekendDocs = 0;
+
   for (const d of docs) {
     const day = isoDay(d.createdAt);
-    const i = windowIndex.get(day);
-    if (i !== undefined) window[i].count += 1;
+    daysWithActivity.add(day);
+    const i30 = window30Index.get(day);
+    if (i30 !== undefined) window30[i30].count += 1;
+    const i365 = window365Index.get(day);
+    if (i365 !== undefined) window365[i365].count += 1;
+    const hour = d.createdAt.getHours();
+    hourRhythm[hour] += 1;
+    // Night owl: 22:00 — 04:59 inclusive.
+    if (hour >= 22 || hour < 5) nightOwlDocs += 1;
+    const weekday = d.createdAt.getDay();
+    if (weekday === 0 || weekday === 6) weekendDocs += 1;
   }
 
   const weekdayCounts = [0, 0, 0, 0, 0, 0, 0];
@@ -116,6 +258,20 @@ export function computeStats(docs: StatDoc[], memberSince: Date | null, now = ne
       mostActiveWeekday = i;
     }
   }
+
+  let peakHour: number | null = null;
+  let peakHourCount = 0;
+  for (let h = 0; h < 24; h++) {
+    if (hourRhythm[h] > peakHourCount) {
+      peakHourCount = hourRhythm[h];
+      peakHour = h;
+    }
+  }
+
+  const { current: currentStreak, longest: longestStreak } = computeStreaks(
+    daysWithActivity,
+    now,
+  );
 
   const modelCounts = new Map<string, number>();
   for (const d of docs) modelCounts.set(d.modelId, (modelCounts.get(d.modelId) ?? 0) + 1);
@@ -147,14 +303,27 @@ export function computeStats(docs: StatDoc[], memberSince: Date | null, now = ne
     totalWords,
     languagesReached: targetCounts.size,
     avgWordsPerDoc: Math.round(totalWords / docs.length),
+    currentStreak,
+    longestStreak,
     memberSince,
     topLanguages,
     topPair,
-    activityLast30: window,
+    activityLast30: window30,
+    activityYear: window365,
+    hourRhythm,
+    peakHour,
     mostActiveWeekday,
     modelsUsed,
     longest,
     recent,
+    milestones: computeMilestones({
+      totalDocs: docs.length,
+      totalWords,
+      languagesReached: targetCounts.size,
+      longestStreak,
+      nightOwlDocs,
+      weekendDocs,
+    }),
   };
 }
 
@@ -200,3 +369,32 @@ export async function getUserStats(userId: string): Promise<UserStats | null> {
 export const LANGUAGE_CODES = new Set(LANGUAGES.map((l) => l.code));
 
 export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+
+// "≈ a short novella" — flattering, screenshot-worthy equivalence for the
+// total word count. Buckets tuned to feel earned at each threshold.
+export function wordEquivalent(words: number): string | null {
+  if (words < 100) return null;
+  if (words < 500) return "≈ a long letter";
+  if (words < 1_500) return "≈ a short story";
+  if (words < 4_000) return "≈ a magazine feature";
+  if (words < 8_000) return "≈ a New Yorker piece";
+  if (words < 20_000) return "≈ a novella";
+  if (words < 50_000) return "≈ a slim novel";
+  if (words < 120_000) return "≈ a novel";
+  const novels = Math.floor(words / 80_000);
+  return `≈ ${novels} novels`;
+}
+
+// "Late evening" / "the small hours" / "mid-morning" — editorial label for a
+// 24-hour clock position. Used in the rhythm card.
+export function hourLabel(hour: number): string {
+  if (hour < 5) return "the small hours";
+  if (hour < 8) return "early morning";
+  if (hour < 11) return "mid-morning";
+  if (hour < 13) return "midday";
+  if (hour < 16) return "early afternoon";
+  if (hour < 18) return "late afternoon";
+  if (hour < 21) return "evening";
+  if (hour < 23) return "late evening";
+  return "the witching hour";
+}

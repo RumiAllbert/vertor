@@ -9,9 +9,15 @@ export function PersonalityCard({
   totalDocs: number;
   threshold: number;
 }) {
-  const unlocked = personality && totalDocs >= threshold;
+  const reachedThreshold = totalDocs >= threshold;
+  const unlocked = personality && reachedThreshold;
   const progress = Math.min(totalDocs, threshold) / threshold;
   const remaining = Math.max(0, threshold - totalDocs);
+  // Personality hasn't generated yet but the user is past the threshold —
+  // most likely the previous generation request failed. Tell them that, and
+  // hint that a refresh kicks off another attempt (the dashboard route does
+  // this automatically on each load).
+  const pending = !personality && reachedThreshold;
 
   return (
     <div className="relative rounded-md border border-hairline bg-card px-8 py-10 md:px-12 md:py-14">
@@ -33,6 +39,21 @@ export function PersonalityCard({
           <p className="mt-6 text-[11px] italic text-muted-foreground">
             Refreshes every {threshold} translations · last updated {formatRelative(personality.generatedAt)}
           </p>
+        </>
+      ) : pending ? (
+        <>
+          <h2 className="display text-[28px] italic text-foreground/70 md:text-[34px]">
+            Composing your portrait…
+          </h2>
+          <p className="mt-3 max-w-xl text-[13px] italic text-muted-foreground">
+            We&apos;re reading your last few translations to write a small editorial
+            sketch of you. Refresh in a moment — if it still hasn&apos;t arrived,
+            the model briefly stumbled and will try again on the next visit.
+          </p>
+          <div className="mt-7 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span aria-hidden className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-ink" />
+            <span className="font-mono uppercase tracking-[0.18em]">drafting</span>
+          </div>
         </>
       ) : (
         <>

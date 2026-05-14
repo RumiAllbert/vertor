@@ -10,14 +10,19 @@ import { languageName } from "@/lib/languages";
 import { getModel } from "@/lib/models";
 
 const PERSONALITY_MODEL_ID = "gemini-3.1-flash-lite-preview";
+const FALLBACK_MODEL_ID = "gemini-3.1-flash-preview";
 const UNLOCK_THRESHOLD = 5;
 const REFRESH_INTERVAL = 5;
 const MIN_REGEN_GAP_MS = 10_000;
 
+// Loose schema — the model occasionally returns 2 or 4 traits, or slightly
+// over-length strings. Validating those out hard caused silent generation
+// failures (and the card stayed in its "unlocks at 5" state forever). We
+// accept what we get, then normalize to exactly three short adjectives below.
 const PersonalitySchema = z.object({
-  title: z.string().min(2).max(40),
-  blurb: z.string().min(8).max(180),
-  traits: z.tuple([z.string().min(1).max(14), z.string().min(1).max(14), z.string().min(1).max(14)]),
+  title: z.string().min(2).max(80),
+  blurb: z.string().min(8).max(300),
+  traits: z.array(z.string().min(1).max(40)).min(1).max(8),
 });
 
 export function shouldGenerate(args: {
@@ -57,6 +62,32 @@ export function buildPersonalityPrompt(docs: StatDoc[], stats: UserStats): strin
   ].join("\n");
 }
 
+// Coerce whatever the model returns into exactly three short, lowercase
+// single-word adjectives. Splits on whitespace/punctuation, dedupes, pads.
+function normalizeTraits(raw: string[]): [string, string, string] {
+  const FALLBACKS = ["curious", "patient", "precise"];
+  const words = raw
+    .flatMap((t) => t.split(/[\s,;/·]+/))
+    .map((w) => w.toLowerCase().replace(/[^\p{L}-]+/gu, "").slice(0, 14))
+    .filter((w) => w.length >= 2);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const w of words) {
+    if (seen.has(w)) continue;
+    seen.add(w);
+    out.push(w);
+    if (out.length === 3) break;
+  }
+  for (const w of FALLBACKS) {
+    if (out.length === 3) break;
+    if (!seen.has(w)) {
+      seen.add(w);
+      out.push(w);
+    }
+  }
+  return [out[0], out[1], out[2]] as [string, string, string];
+}
+
 function langPair(source: string, target: string): string {
   const s = source === "auto" ? "auto" : languageName(source);
   const t = languageName(target);
@@ -77,19 +108,32 @@ export async function maybeGeneratePersonality(args: {
   const db = getDb();
   if (!db) return args.existing;
 
-  try {
-    const { object } = await generateObject({
-      model: resolveModel(PERSONALITY_MODEL_ID),
+  const promptText = buildPersonalityPrompt(args.docs, args.stats);
+  const attempt = (modelId: string) =>
+    generateObject({
+      model: resolveModel(modelId),
       system: personalitySystem(),
-      prompt: buildPersonalityPrompt(args.docs, args.stats),
+      prompt: promptText,
       schema: PersonalitySchema,
       temperature: 0.9,
     });
+  try {
+    let object: z.infer<typeof PersonalitySchema>;
+    try {
+      ({ object } = await attempt(PERSONALITY_MODEL_ID));
+    } catch (firstErr) {
+      // Many silent failures here are transient (429, schema-parse error,
+      // gateway flake). Try the slightly larger flash model once before
+      // giving up — it follows JSON instructions more reliably.
+      console.error("personality: primary model failed, retrying", firstErr);
+      ({ object } = await attempt(FALLBACK_MODEL_ID));
+    }
 
+    const normalized = normalizeTraits(object.traits);
     const next: PersonalityValue = {
-      title: object.title,
-      blurb: object.blurb,
-      traits: object.traits as [string, string, string],
+      title: object.title.trim().slice(0, 60),
+      blurb: object.blurb.trim().slice(0, 240),
+      traits: normalized,
       generatedAt: new Date().toISOString(),
     };
 
