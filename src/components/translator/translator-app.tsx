@@ -1,5 +1,8 @@
 "use client";
 import * as React from "react";
+import TurndownService from "turndown";
+import { gfm as turndownGfm } from "turndown-plugin-gfm";
+import { Eye, EyeOff } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ModelPicker } from "./model-picker";
 import { LangPicker } from "./lang-picker";
@@ -17,6 +20,13 @@ import {
   type DocStore,
 } from "@/lib/doc-store";
 import { CloudDocStore } from "@/lib/cloud-doc-store";
+import {
+  LocalInstructionStore,
+  CloudInstructionStore,
+  type InstructionStore,
+} from "@/lib/instruction-store";
+import type { UserPreset } from "@/lib/db/schema";
+import { InstructionBar } from "./instruction-bar";
 import { MigrateBanner } from "./migrate-banner";
 import { languageName } from "@/lib/languages";
 import type { VariationKind } from "@/lib/prompts";
@@ -26,6 +36,19 @@ import { captureRevision, listRevisions, restoreRevision, truncate } from "@/lib
 import type { Revision } from "@/lib/db/schema";
 import { HistoryPanel } from "./history-panel";
 import { DiffView } from "./diff-view";
+import { MarkdownView } from "./markdown-view";
+import { AlignmentOverlay } from "./alignment-overlay";
+import {
+  splitParagraphs,
+  findParagraphIndex,
+  alignCacheKey,
+  getCachedAlignment,
+  setCachedAlignment,
+  type AlignDirection,
+  type AlignmentResult,
+} from "@/lib/alignment";
+
+type ViewMode = "edit" | "read";
 
 type SelectionInfo = {
   text: string;
@@ -36,6 +59,25 @@ type SelectionInfo = {
   // and can be used with position: fixed anywhere in the DOM.
   rect: { top: number; left: number; right: number; bottom: number; width: number; height: number };
 };
+
+// Cross-pane alignment state. paragraph* is filled instantly on selection
+// using paragraph-index mapping; tight* is filled when /api/align returns and
+// shrinks the highlight to the precise corresponding span. Both can be null
+// independently — paragraph alignment is best-effort (no-op on paragraph
+// count mismatch), tight is best-effort (no-op when the model can't find a
+// match).
+type Alignment = {
+  origin: "source" | "translation";
+  paragraphSource: AlignmentResult | null;
+  paragraphTranslation: AlignmentResult | null;
+  tightSource: AlignmentResult | null;
+  tightTranslation: AlignmentResult | null;
+};
+
+// Skip the LLM tightening pass for very long selections — they're almost
+// always full-paragraph or larger, where the instant paragraph highlight is
+// already correct and an LLM round-trip just adds latency and cost.
+const ALIGN_MAX_SELECTION = 1500;
 
 const CONTEXT_RADIUS = 240;
 
@@ -89,6 +131,11 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const [detectedLang, setDetectedLang] = React.useState<string | null>(null);
   const [globalInstruction, setGlobalInstruction] = React.useState("");
   const [showInstruction, setShowInstruction] = React.useState(false);
+  const [userPresets, setUserPresets] = React.useState<UserPreset[]>([]);
+  // True once we've finished hydrating from the store. Until then we don't
+  // debounce-write back, otherwise the initial "" would clobber the saved
+  // value before we read it.
+  const [instructionHydrated, setInstructionHydrated] = React.useState(false);
 
   const [selection, setSelection] = React.useState<SelectionInfo | null>(null);
   const [popoverOpen, setPopoverOpen] = React.useState(false);
@@ -103,6 +150,51 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     } catch {}
   }, [doc.translatedText]);
 
+  // Floating "switch to Edit to edit" hint shown when the user clicks or types
+  // inside a Read-mode pane. Cleared on a timer.
+  const [readHint, setReadHint] = React.useState<{ top: number; left: number; pane: "source" | "translation" } | null>(null);
+  const readHintTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showReadHint = React.useCallback(
+    (e: React.MouseEvent | React.KeyboardEvent, pane: "source" | "translation") => {
+      const top = "clientY" in e ? (e as React.MouseEvent).clientY + 12 : 0;
+      const left = "clientX" in e ? (e as React.MouseEvent).clientX + 12 : 0;
+      setReadHint({ top, left, pane });
+      if (readHintTimerRef.current) clearTimeout(readHintTimerRef.current);
+      readHintTimerRef.current = setTimeout(() => setReadHint(null), 2200);
+    },
+    [],
+  );
+  React.useEffect(
+    () => () => {
+      if (readHintTimerRef.current) clearTimeout(readHintTimerRef.current);
+    },
+    [],
+  );
+
+  const [alignment, setAlignment] = React.useState<Alignment | null>(null);
+  const alignAbortRef = React.useRef<AbortController | null>(null);
+
+  // Per-pane Edit/Read toggle. The editors hold raw markdown either way; Read
+  // mode swaps them for a rendered MarkdownView (headings, lists, clickable
+  // links). UI-only state — never persisted on LocalDoc.
+  const [sourceViewMode, setSourceViewMode] = React.useState<ViewMode>("edit");
+  const [translationViewMode, setTranslationViewMode] = React.useState<ViewMode>("edit");
+
+  // HTML → Markdown converter for paste events. Memoized so we don't rebuild
+  // it (and re-attach the GFM rules) on every render.
+  const turndown = React.useMemo(() => {
+    const td = new TurndownService({
+      headingStyle: "atx",
+      bulletListMarker: "-",
+      codeBlockStyle: "fenced",
+      emDelimiter: "_",
+      strongDelimiter: "**",
+      linkStyle: "inlined",
+    });
+    td.use(turndownGfm);
+    return td;
+  }, []);
+
   // Revision history state
   const [revisions, setRevisions] = React.useState<Revision[]>([]);
   const [historyOpen, setHistoryOpen] = React.useState(false);
@@ -112,6 +204,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const loadedFromHistoryRef = React.useRef(false);
 
   const translationRef = React.useRef<HTMLDivElement>(null);
+  const sourceTextareaRef = React.useRef<HTMLTextAreaElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const abortRef = React.useRef<AbortController | null>(null);
   // True when the title was either set by the user (typed into the input) or
@@ -125,9 +218,64 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     [session.user],
   );
 
+  const instructionStore: InstructionStore = React.useMemo(
+    () => (session.user ? new CloudInstructionStore() : new LocalInstructionStore()),
+    [session.user],
+  );
+
   React.useEffect(() => {
     store.list().then(setDocs);
   }, [store]);
+
+  // Hydrate the instruction bar (current text + user presets) once per
+  // session/store change. Marking `instructionHydrated` after this lands
+  // gates the debounced write-back below so the empty initial state doesn't
+  // overwrite the saved value.
+  React.useEffect(() => {
+    let cancelled = false;
+    setInstructionHydrated(false);
+    instructionStore.get().then((value) => {
+      if (cancelled) return;
+      setGlobalInstruction(value.current);
+      setUserPresets(value.presets);
+      setInstructionHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [instructionStore]);
+
+  // Debounced write of the current instruction text. Same 600ms cadence as
+  // the doc save below so the patterns feel identical.
+  React.useEffect(() => {
+    if (!instructionHydrated) return;
+    const t = setTimeout(() => {
+      instructionStore.setCurrent(globalInstruction).catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [globalInstruction, instructionHydrated, instructionStore]);
+
+  const onSavePreset = React.useCallback(
+    (preset: UserPreset) => {
+      setUserPresets((prev) => {
+        const next = [preset, ...prev];
+        instructionStore.setPresets(next).catch(() => {});
+        return next;
+      });
+    },
+    [instructionStore],
+  );
+
+  const onDeletePreset = React.useCallback(
+    (id: string) => {
+      setUserPresets((prev) => {
+        const next = prev.filter((p) => p.id !== id);
+        instructionStore.setPresets(next).catch(() => {});
+        return next;
+      });
+    },
+    [instructionStore],
+  );
 
   // Auto-save status — surfaces the existing 600ms-debounced save in the UI
   // so the user can see their work is being persisted.
@@ -184,6 +332,27 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
   const updateDoc = React.useCallback((patch: Partial<LocalDoc>) => {
     setDoc((d) => ({ ...d, ...patch, updatedAt: Date.now() }));
+  }, []);
+
+  // Clear cross-pane alignment whenever the underlying ground truth changes
+  // (different doc, view mode flipped to Read, popover opens, translation
+  // starts streaming). The alignment math is bound to specific char offsets
+  // that are no longer meaningful after any of these transitions.
+  React.useEffect(() => {
+    setAlignment(null);
+    alignAbortRef.current?.abort();
+  }, [doc.id, sourceViewMode, translationViewMode, translating, popoverOpen]);
+
+  // Esc clears any active alignment highlight.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setAlignment(null);
+        alignAbortRef.current?.abort();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   // In Simple mode, the document's model always tracks the simple-mode default.
@@ -262,7 +431,6 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     loadedFromHistoryRef.current = true; // suppress an accidental edit-capture
     setDoc(fresh);
     setDetectedLang(null);
-    setGlobalInstruction("");
     setSelectedRevision(null);
   };
 
@@ -409,6 +577,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   }, [doc.translatedText, session.user, translating, popoverOpen, capture]);
 
   const onTranslationMouseUp = () => {
+    if (translationViewMode !== "edit") return;
     const node = translationRef.current;
     if (!node) return;
     const sel = window.getSelection();
@@ -420,6 +589,10 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     // place the caret and clear any existing variation state.
     if (sel.isCollapsed) {
       setSelection(null);
+      // Only clear cross-pane alignment when the existing alignment came
+      // from THIS pane — a source-originated alignment shouldn't vanish
+      // because the user dropped a caret on the translation side.
+      setAlignment((prev) => (prev?.origin === "translation" ? null : prev));
       return;
     }
 
@@ -427,6 +600,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     const range = sel.getRangeAt(0);
     if (!node.contains(range.commonAncestorContainer)) {
       setSelection(null);
+      setAlignment((prev) => (prev?.origin === "translation" ? null : prev));
       return;
     }
     const text = sel.toString().trim();
@@ -435,6 +609,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     // script). Stops clicks on " ", ",", "—", etc. from triggering the chip.
     if (!text || !/[\p{L}\p{N}]/u.test(text)) {
       setSelection(null);
+      setAlignment((prev) => (prev?.origin === "translation" ? null : prev));
       return;
     }
     const { start, end } = absoluteOffsets(node, range);
@@ -454,6 +629,150 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     };
 
     setSelection({ text, start, end, kind, rect });
+    triggerAlignment({ origin: "translation", start, end });
+  };
+
+  const triggerAlignment = React.useCallback(
+    ({ origin, start, end }: { origin: "source" | "translation"; start: number; end: number }) => {
+      // No alignment while a translation is streaming — both sides are
+      // volatile, and any LLM result will be wrong by the time it lands.
+      if (translating) return;
+      if (!doc.translatedText.trim()) return;
+
+      const srcParas = splitParagraphs(doc.sourceText);
+      const tgtParas = splitParagraphs(doc.translatedText);
+      const originParas = origin === "source" ? srcParas : tgtParas;
+      const otherParas = origin === "source" ? tgtParas : srcParas;
+      const paraIdx = findParagraphIndex(start, originParas);
+      const originPara = paraIdx >= 0 ? originParas[paraIdx] : null;
+      const otherPara = paraIdx >= 0 ? otherParas[paraIdx] ?? null : null;
+
+      // Show paragraph-level highlight on both sides immediately — origin gets
+      // its containing paragraph, other side gets the index-matched paragraph
+      // (best-effort: undefined if paragraph counts diverge).
+      const paragraphSource = origin === "source"
+        ? originPara ? { start: originPara.start, end: originPara.end } : null
+        : otherPara ? { start: otherPara.start, end: otherPara.end } : null;
+      const paragraphTranslation = origin === "translation"
+        ? originPara ? { start: originPara.start, end: originPara.end } : null
+        : otherPara ? { start: otherPara.start, end: otherPara.end } : null;
+
+      setAlignment({
+        origin,
+        paragraphSource,
+        paragraphTranslation,
+        // Origin pane's tight highlight is the user's literal selection — no
+        // round-trip needed.
+        tightSource: origin === "source" ? { start, end } : null,
+        tightTranslation: origin === "translation" ? { start, end } : null,
+      });
+
+      const direction: AlignDirection =
+        origin === "source" ? "source-to-translation" : "translation-to-source";
+      const originText = origin === "source" ? doc.sourceText : doc.translatedText;
+      const selectionText = originText.slice(start, end);
+
+      // Don't ping the LLM for paragraph-sized or larger selections — the
+      // instant paragraph highlight is already the right answer.
+      if (selectionText.length > ALIGN_MAX_SELECTION) return;
+
+      const cacheKey = alignCacheKey({
+        direction,
+        selection: selectionText,
+        selectionStart: start,
+        source: doc.sourceText,
+        translation: doc.translatedText,
+      });
+      const cached = getCachedAlignment(cacheKey);
+      if (cached !== undefined) {
+        // Apply cached result, but only if the origin side's literal selection
+        // is still the one this request was fired for — guards against a race
+        // where a new selection was made between this synchronous cache lookup
+        // and the (already-scheduled) state update.
+        setAlignment((prev) => {
+          if (!prev || prev.origin !== origin) return prev;
+          const originTight =
+            origin === "source" ? prev.tightSource : prev.tightTranslation;
+          if (originTight?.start !== start || originTight?.end !== end) return prev;
+          return origin === "source"
+            ? { ...prev, tightTranslation: cached }
+            : { ...prev, tightSource: cached };
+        });
+        return;
+      }
+
+      alignAbortRef.current?.abort();
+      const controller = new AbortController();
+      alignAbortRef.current = controller;
+
+      (async () => {
+        try {
+          const res = await fetch("/api/align", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({
+              source: doc.sourceText,
+              translation: doc.translatedText,
+              selection: selectionText,
+              selectionStart: start,
+              selectionEnd: end,
+              direction,
+              sourceLang: doc.sourceLang === "auto" ? detectedLang ?? "auto" : doc.sourceLang,
+              targetLang: doc.targetLang,
+            }),
+          });
+          if (!res.ok) return;
+          const payload = (await res.json()) as
+            | { start: number; end: number }
+            | { start: null };
+          const tight =
+            "end" in payload && typeof payload.start === "number"
+              ? { start: payload.start, end: payload.end }
+              : null;
+          setCachedAlignment(cacheKey, tight);
+          // Same staleness guard as the cached-path above — if the user has
+          // moved on to a different selection, drop this result rather than
+          // overwrite the newer highlight.
+          setAlignment((prev) => {
+            if (!prev || prev.origin !== origin) return prev;
+            const originTight =
+              origin === "source" ? prev.tightSource : prev.tightTranslation;
+            if (originTight?.start !== start || originTight?.end !== end) return prev;
+            return origin === "source"
+              ? { ...prev, tightTranslation: tight }
+              : { ...prev, tightSource: tight };
+          });
+        } catch (err) {
+          if ((err as Error).name !== "AbortError") console.error(err);
+        }
+      })();
+    },
+    [
+      doc.sourceText,
+      doc.translatedText,
+      doc.sourceLang,
+      doc.targetLang,
+      detectedLang,
+      translating,
+    ],
+  );
+
+  const onSourceSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    if (sourceViewMode !== "edit") return;
+    if (translating) return;
+    const ta = e.currentTarget;
+    const start = ta.selectionStart ?? 0;
+    const end = ta.selectionEnd ?? 0;
+    if (start === end) {
+      // Collapsed caret — only clear if the alignment came from this pane,
+      // otherwise leave the translation→source alignment visible.
+      setAlignment((prev) => (prev?.origin === "source" ? null : prev));
+      return;
+    }
+    const text = doc.sourceText.slice(start, end);
+    if (!text.trim() || !/[\p{L}\p{N}]/u.test(text)) return;
+    triggerAlignment({ origin: "source", start, end });
   };
 
   const showVariations = () => {
@@ -556,9 +875,15 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   };
 
   const onTranslationPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    // Strip formatting on paste — plain text only.
+    // Convert pasted HTML (Word, Google Docs, web pages) into markdown so
+    // structure survives. Fall back to plain text otherwise. Either way we
+    // insert as a single text node — the variations feature relies on the
+    // contentEditable holding exactly one text node so DOM offsets line up
+    // with string indexing into doc.translatedText.
     e.preventDefault();
-    const text = e.clipboardData.getData("text/plain");
+    const html = e.clipboardData.getData("text/html");
+    const plain = e.clipboardData.getData("text/plain");
+    const text = html ? turndown.turndown(html) : plain;
     if (!text) return;
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
@@ -569,6 +894,24 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     sel.removeAllRanges();
     sel.addRange(range);
     e.currentTarget.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  const onSourcePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const html = e.clipboardData.getData("text/html");
+    const plain = e.clipboardData.getData("text/plain");
+    if (!html && !plain) return;
+    e.preventDefault();
+    const md = html ? turndown.turndown(html) : plain;
+    const ta = e.currentTarget;
+    const start = ta.selectionStart ?? doc.sourceText.length;
+    const end = ta.selectionEnd ?? doc.sourceText.length;
+    const next = doc.sourceText.slice(0, start) + md + doc.sourceText.slice(end);
+    updateDoc({ sourceText: next });
+    // The textarea hasn't re-rendered yet; restore the caret after React commits.
+    requestAnimationFrame(() => {
+      const caret = start + md.length;
+      ta.setSelectionRange(caret, caret);
+    });
   };
 
   const sourceLangBadge =
@@ -722,18 +1065,13 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
         </header>
 
         {showInstruction && (
-          <div className="border-b border-hairline bg-[color-mix(in_oklch,var(--ink)_4%,var(--background))] px-6 py-3">
-            <div className="flex items-baseline gap-3">
-              <span className="small-caps shrink-0">Instruction</span>
-              <Textarea
-                value={globalInstruction}
-                onChange={(e) => setGlobalInstruction(e.target.value)}
-                placeholder='e.g. "Use British spelling. Keep tone casual. Translate place names but keep proper nouns."'
-                rows={1}
-                className="resize-none border-0 bg-transparent px-0 py-0 text-[13px] italic shadow-none focus-visible:ring-0"
-              />
-            </div>
-          </div>
+          <InstructionBar
+            value={globalInstruction}
+            onChange={setGlobalInstruction}
+            presets={userPresets}
+            onSavePreset={onSavePreset}
+            onDeletePreset={onDeletePreset}
+          />
         )}
 
         {/* Two-pane editor */}
@@ -742,16 +1080,47 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           <section className="flex min-w-0 min-h-0 flex-col">
             <div className="flex items-baseline justify-between border-b border-hairline px-10 py-3">
               <span className="small-caps">Source</span>
-              <span className="font-mono text-[10.5px] text-muted-foreground">
-                {sourceLangBadge} · {wordCount(doc.sourceText)} {wordCount(doc.sourceText) === 1 ? "word" : "words"}
-              </span>
+              <div className="flex items-baseline gap-3">
+                <span className="font-mono text-[10.5px] text-muted-foreground">
+                  {sourceLangBadge} · {wordCount(doc.sourceText)} {wordCount(doc.sourceText) === 1 ? "word" : "words"}
+                </span>
+                <ViewToggle
+                  mode={sourceViewMode}
+                  onToggle={() => setSourceViewMode((m) => (m === "edit" ? "read" : "edit"))}
+                />
+              </div>
             </div>
-            <Textarea
-              value={doc.sourceText}
-              onChange={(e) => updateDoc({ sourceText: e.target.value })}
-              placeholder="Paste or write the original here. The translation streams on the right."
-              className="editor-surface min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-10 pt-7 pb-10 shadow-none focus-visible:ring-0"
-            />
+            {sourceViewMode === "edit" ? (
+              <Textarea
+                ref={sourceTextareaRef}
+                value={doc.sourceText}
+                onChange={(e) => updateDoc({ sourceText: e.target.value })}
+                onPaste={onSourcePaste}
+                onSelect={onSourceSelect}
+                placeholder="Paste or write the original here. The translation streams on the right."
+                className="editor-surface min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-10 pt-7 pb-10 shadow-none focus-visible:ring-0"
+              />
+            ) : (
+              <div
+                role="region"
+                tabIndex={0}
+                onClick={(e) => showReadHint(e, "source")}
+                onKeyDown={(e) => {
+                  if (
+                    e.key.length === 1 ||
+                    e.key === "Backspace" ||
+                    e.key === "Delete" ||
+                    e.key === "Enter"
+                  ) {
+                    e.preventDefault();
+                    showReadHint(e, "source");
+                  }
+                }}
+                className="min-h-0 flex-1 overflow-y-auto px-10 pt-7 pb-10 outline-none"
+              >
+                <MarkdownView source={doc.sourceText} />
+              </div>
+            )}
           </section>
 
           {/* Hairline divider */}
@@ -806,6 +1175,11 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                   <History className="h-3 w-3" />
                   <span>History</span>
                 </button>
+                <ViewToggle
+                  mode={translationViewMode}
+                  onToggle={() => setTranslationViewMode((m) => (m === "edit" ? "read" : "edit"))}
+                  disabled={translating || !doc.translatedText}
+                />
               </div>
             </div>
             {selectedRevision ? (
@@ -842,64 +1216,112 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                   </figure>
                 </div>
               )}
-              <div
-                ref={translationRef}
-                contentEditable={!translating && !popoverOpen && Boolean(doc.translatedText)}
-                suppressContentEditableWarning
-                spellCheck
-                onMouseUp={onTranslationMouseUp}
-                onInput={onTranslationInput}
-                onKeyDown={onTranslationKeyDown}
-                onPaste={onTranslationPaste}
-                className="editor-surface select-text whitespace-pre-wrap px-10 pt-7 pb-10 outline-none"
-              />
+              {translationViewMode === "edit" ? (
+                <>
+                  <div
+                    ref={translationRef}
+                    contentEditable={!translating && !popoverOpen && Boolean(doc.translatedText)}
+                    suppressContentEditableWarning
+                    spellCheck
+                    onMouseUp={onTranslationMouseUp}
+                    onInput={onTranslationInput}
+                    onKeyDown={onTranslationKeyDown}
+                    onPaste={onTranslationPaste}
+                    className="editor-surface select-text whitespace-pre-wrap px-10 pt-7 pb-10 outline-none"
+                  />
 
-              {selection && !popoverOpen && (
-                <button
-                  onClick={showVariations}
-                  className="fixed z-50 inline-flex items-center gap-1.5 border border-foreground bg-background px-2.5 py-1 text-[11px] tracking-tight text-foreground shadow-[2px_2px_0_var(--ink)] transition-transform hover:translate-x-[-1px] hover:translate-y-[-1px]"
-                  style={{
-                    top: Math.max(8, selection.rect.bottom + 6),
-                    left: Math.max(8, selection.rect.left),
-                  }}
-                >
-                  <span className="font-mono text-[10px] text-ink">+3</span>
-                  <span>alternatives</span>
-                  <span className="text-[10px] italic text-muted-foreground">{selection.kind}</span>
-                </button>
+                  {selection && !popoverOpen && (
+                    <button
+                      onClick={showVariations}
+                      className="fixed z-50 inline-flex items-center gap-1.5 border border-foreground bg-background px-2.5 py-1 text-[11px] tracking-tight text-foreground shadow-[2px_2px_0_var(--ink)] transition-transform hover:translate-x-[-1px] hover:translate-y-[-1px]"
+                      style={{
+                        top: Math.max(8, selection.rect.bottom + 6),
+                        left: Math.max(8, selection.rect.left),
+                      }}
+                    >
+                      <span className="font-mono text-[10px] text-ink">+3</span>
+                      <span>alternatives</span>
+                      <span className="text-[10px] italic text-muted-foreground">{selection.kind}</span>
+                    </button>
+                  )}
+
+                  <VariationsPopover
+                    open={popoverOpen}
+                    anchor={
+                      selection
+                        ? { top: selection.rect.bottom, left: selection.rect.left }
+                        : null
+                    }
+                    selection={selection?.text ?? ""}
+                    kind={selection?.kind ?? "phrase"}
+                    sourceContext={sourceContext}
+                    translationContext={translationContext}
+                    sourceLang={doc.sourceLang === "auto" ? detectedLang ?? "auto" : doc.sourceLang}
+                    targetLang={doc.targetLang}
+                    modelId={doc.modelId}
+                    onOpenChange={(o) => {
+                      setPopoverOpen(o);
+                      if (!o) setSelection(null);
+                    }}
+                    onApply={applyReplacement}
+                    onApplyToWhole={(instruction) => {
+                      setGlobalInstruction(instruction);
+                      setShowInstruction(true);
+                      setPopoverOpen(false);
+                      setSelection(null);
+                      translate(instruction);
+                    }}
+                  />
+                </>
+              ) : (
+                doc.translatedText && (
+                  <div
+                    role="region"
+                    tabIndex={0}
+                    onClick={(e) => showReadHint(e, "translation")}
+                    onKeyDown={(e) => {
+                      if (
+                        e.key.length === 1 ||
+                        e.key === "Backspace" ||
+                        e.key === "Delete" ||
+                        e.key === "Enter"
+                      ) {
+                        e.preventDefault();
+                        showReadHint(e, "translation");
+                      }
+                    }}
+                    className="px-10 pt-7 pb-10 outline-none"
+                  >
+                    <MarkdownView source={doc.translatedText} />
+                  </div>
+                )
               )}
-
-              <VariationsPopover
-                open={popoverOpen}
-                anchor={
-                  selection
-                    ? { top: selection.rect.bottom, left: selection.rect.left }
-                    : null
-                }
-                selection={selection?.text ?? ""}
-                kind={selection?.kind ?? "phrase"}
-                sourceContext={sourceContext}
-                translationContext={translationContext}
-                sourceLang={doc.sourceLang === "auto" ? detectedLang ?? "auto" : doc.sourceLang}
-                targetLang={doc.targetLang}
-                modelId={doc.modelId}
-                onOpenChange={(o) => {
-                  setPopoverOpen(o);
-                  if (!o) setSelection(null);
-                }}
-                onApply={applyReplacement}
-                onApplyToWhole={(instruction) => {
-                  setGlobalInstruction(instruction);
-                  setShowInstruction(true);
-                  setPopoverOpen(false);
-                  setSelection(null);
-                  translate(instruction);
-                }}
-              />
             </div>
             )}
           </section>
         </div>
+
+        {alignment && sourceViewMode === "edit" && (alignment.tightSource ?? alignment.paragraphSource) && (
+          <AlignmentOverlay
+            targetRef={sourceTextareaRef}
+            kind="textarea"
+            text={doc.sourceText}
+            start={(alignment.tightSource ?? alignment.paragraphSource)!.start}
+            end={(alignment.tightSource ?? alignment.paragraphSource)!.end}
+            variant={alignment.tightSource ? "tight" : "paragraph"}
+          />
+        )}
+
+        {alignment && translationViewMode === "edit" && !selectedRevision && (alignment.tightTranslation ?? alignment.paragraphTranslation) && (
+          <AlignmentOverlay
+            targetRef={translationRef}
+            kind="contentEditable"
+            text={doc.translatedText}
+            start={(alignment.tightTranslation ?? alignment.paragraphTranslation)!.start}
+            end={(alignment.tightTranslation ?? alignment.paragraphTranslation)!.end}
+            variant={alignment.tightTranslation ? "tight" : "paragraph"}
+          />
+        )}
 
         <footer className="flex shrink-0 items-baseline justify-between gap-2 border-t border-hairline bg-background px-6 py-2">
           <span className="text-[10.5px] italic text-muted-foreground">
@@ -915,6 +1337,20 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           </span>
         </footer>
       </main>
+
+      {readHint && (
+        <div
+          role="status"
+          className="fade-up fixed z-50 max-w-[260px] border border-foreground bg-background px-3 py-2 text-[11.5px] leading-snug text-foreground shadow-[2px_2px_0_var(--ink)]"
+          style={{ top: readHint.top, left: readHint.left }}
+        >
+          <div className="small-caps mb-1">Read mode</div>
+          <div className="italic text-muted-foreground">
+            To edit this {readHint.pane}, switch the toggle to{" "}
+            <span className="not-italic font-medium text-foreground">Edit</span>.
+          </div>
+        </div>
+      )}
 
       {historyOpen && session.user && (
         <HistoryPanel
@@ -980,6 +1416,39 @@ function timeAgo(ts: number): string {
   if (s < 3600) return `${Math.floor(s / 60)} min ago`;
   if (s < 86400) return `${Math.floor(s / 3600)} hr ago`;
   return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/* ---------------- ViewToggle ---------------- */
+
+function ViewToggle({
+  mode,
+  onToggle,
+  disabled = false,
+}: {
+  mode: ViewMode;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  const next = mode === "edit" ? "read" : "edit";
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      aria-label={next === "read" ? "Show rendered view" : "Show raw markdown"}
+      title={next === "read" ? "Read view" : "Edit view"}
+      className={cn(
+        "inline-flex items-center text-muted-foreground transition-colors hover:text-foreground",
+        "disabled:cursor-not-allowed disabled:opacity-40",
+      )}
+    >
+      {mode === "edit" ? (
+        <Eye className="h-3.5 w-3.5" />
+      ) : (
+        <EyeOff className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
 }
 
 /* helpers */

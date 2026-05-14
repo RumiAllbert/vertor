@@ -6,10 +6,11 @@ export function translationSystem(targetLang: string, instruction?: string) {
     `Translate the user's text into ${languageName(targetLang)}.`,
     `Preserve the author's voice, tone, register, and rhythm.`,
     `Preserve paragraph breaks exactly. Do not add or remove paragraphs.`,
-    `Preserve markdown, code, citations, numbers, and proper nouns unless translation is required.`,
+    `Preserve all markdown formatting exactly: ATX headings (#, ##, ###, etc. with the same depth), bullet lists (- item) and numbered lists (1. item) including nesting and ordering, bold (**text**) and italic (*text* or _text_) emphasis, inline code (\`code\`) and fenced code blocks, blockquotes (>), and hyperlinks in the form [link text](https://url). Translate the visible text inside these constructs; never translate URLs, code, or numeric list markers.`,
+    `Preserve citations, numbers, and proper nouns unless translation is required.`,
     `Translate idioms naturally; do not calque.`,
     `Do not add commentary, notes, prefaces, or quotation marks around the result.`,
-    `Output ONLY the translation as plain text.`,
+    `Output ONLY the translation as markdown text (same syntax as the input).`,
   ];
   if (instruction?.trim()) {
     base.push(`Additional instructions from the user (apply throughout): ${instruction.trim()}`);
@@ -76,6 +77,34 @@ export function variationsSystem(opts: {
     lines.push(`Additional user instruction: ${opts.instruction.trim()}`);
   }
   return lines.join("\n");
+}
+
+export function alignmentSystem(opts: {
+  sourceLang: string;
+  targetLang: string;
+  direction: "source-to-translation" | "translation-to-source";
+}) {
+  const fromLang =
+    opts.direction === "source-to-translation"
+      ? opts.sourceLang === "auto"
+        ? "the source language"
+        : languageName(opts.sourceLang)
+      : languageName(opts.targetLang);
+  const toLang =
+    opts.direction === "source-to-translation"
+      ? languageName(opts.targetLang)
+      : opts.sourceLang === "auto"
+        ? "the source language"
+        : languageName(opts.sourceLang);
+  return [
+    `You align translations span-by-span.`,
+    `You are given a span selected from a text in ${fromLang} and the corresponding full text in ${toLang}.`,
+    `Identify the smallest substring in the ${toLang} text that conveys the same meaning as the selection.`,
+    `The returned match MUST appear verbatim in the ${toLang} text — copy it exactly, preserving punctuation, capitalization, accents, and whitespace.`,
+    `Quote the smallest contiguous span that fully carries the selection's meaning. Do not pad with surrounding words.`,
+    `If the selection's meaning is omitted, rephrased beyond recognition, or otherwise absent from the ${toLang} text, return null for match.`,
+    `Return ONLY a JSON object with a single "match" field. No commentary.`,
+  ].join("\n");
 }
 
 export function personalitySystem() {
