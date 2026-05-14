@@ -26,6 +26,7 @@ export function InstructionBar({
 }: Props) {
   const [savingName, setSavingName] = React.useState<string | null>(null);
   const saveInputRef = React.useRef<HTMLInputElement>(null);
+  const saveOpen = savingName !== null;
 
   // The current textarea content matches one of the saved presets (default or
   // user). When true, the "Save" affordance is hidden — there's nothing new
@@ -40,9 +41,12 @@ export function InstructionBar({
     [allPresets, trimmed],
   );
 
+  // Select the default name only when save mode opens — not on every keystroke
+  // (depending on `savingName` itself would re-select after each onChange and
+  // wipe out the user's typed characters).
   React.useEffect(() => {
-    if (savingName !== null) saveInputRef.current?.select();
-  }, [savingName]);
+    if (saveOpen) saveInputRef.current?.select();
+  }, [saveOpen]);
 
   const beginSave = () => {
     if (!trimmed) return;
