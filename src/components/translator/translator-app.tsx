@@ -20,6 +20,13 @@ import {
   type DocStore,
 } from "@/lib/doc-store";
 import { CloudDocStore } from "@/lib/cloud-doc-store";
+import {
+  LocalInstructionStore,
+  CloudInstructionStore,
+  type InstructionStore,
+} from "@/lib/instruction-store";
+import type { UserPreset } from "@/lib/db/schema";
+import { InstructionBar } from "./instruction-bar";
 import { MigrateBanner } from "./migrate-banner";
 import { languageName } from "@/lib/languages";
 import type { VariationKind } from "@/lib/prompts";
@@ -100,6 +107,11 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const [detectedLang, setDetectedLang] = React.useState<string | null>(null);
   const [globalInstruction, setGlobalInstruction] = React.useState("");
   const [showInstruction, setShowInstruction] = React.useState(false);
+  const [userPresets, setUserPresets] = React.useState<UserPreset[]>([]);
+  // True once we've finished hydrating from the store. Until then we don't
+  // debounce-write back, otherwise the initial "" would clobber the saved
+  // value before we read it.
+  const [instructionHydrated, setInstructionHydrated] = React.useState(false);
 
   const [selection, setSelection] = React.useState<SelectionInfo | null>(null);
   const [popoverOpen, setPopoverOpen] = React.useState(false);
@@ -151,9 +163,64 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     [session.user],
   );
 
+  const instructionStore: InstructionStore = React.useMemo(
+    () => (session.user ? new CloudInstructionStore() : new LocalInstructionStore()),
+    [session.user],
+  );
+
   React.useEffect(() => {
     store.list().then(setDocs);
   }, [store]);
+
+  // Hydrate the instruction bar (current text + user presets) once per
+  // session/store change. Marking `instructionHydrated` after this lands
+  // gates the debounced write-back below so the empty initial state doesn't
+  // overwrite the saved value.
+  React.useEffect(() => {
+    let cancelled = false;
+    setInstructionHydrated(false);
+    instructionStore.get().then((value) => {
+      if (cancelled) return;
+      setGlobalInstruction(value.current);
+      setUserPresets(value.presets);
+      setInstructionHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [instructionStore]);
+
+  // Debounced write of the current instruction text. Same 600ms cadence as
+  // the doc save below so the patterns feel identical.
+  React.useEffect(() => {
+    if (!instructionHydrated) return;
+    const t = setTimeout(() => {
+      instructionStore.setCurrent(globalInstruction).catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [globalInstruction, instructionHydrated, instructionStore]);
+
+  const onSavePreset = React.useCallback(
+    (preset: UserPreset) => {
+      setUserPresets((prev) => {
+        const next = [preset, ...prev];
+        instructionStore.setPresets(next).catch(() => {});
+        return next;
+      });
+    },
+    [instructionStore],
+  );
+
+  const onDeletePreset = React.useCallback(
+    (id: string) => {
+      setUserPresets((prev) => {
+        const next = prev.filter((p) => p.id !== id);
+        instructionStore.setPresets(next).catch(() => {});
+        return next;
+      });
+    },
+    [instructionStore],
+  );
 
   // Auto-save status — surfaces the existing 600ms-debounced save in the UI
   // so the user can see their work is being persisted.
@@ -309,7 +376,6 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     loadedFromHistoryRef.current = true; // suppress an accidental edit-capture
     setDoc(fresh);
     setDetectedLang(null);
-    setGlobalInstruction("");
     setSelectedRevision(null);
   };
 
@@ -948,18 +1014,13 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
         </header>
 
         {showInstruction && (
-          <div className="border-b border-hairline bg-[color-mix(in_oklch,var(--ink)_4%,var(--background))] px-6 py-3">
-            <div className="flex items-baseline gap-3">
-              <span className="small-caps shrink-0">Instruction</span>
-              <Textarea
-                value={globalInstruction}
-                onChange={(e) => setGlobalInstruction(e.target.value)}
-                placeholder='e.g. "Use British spelling. Keep tone casual. Translate place names but keep proper nouns."'
-                rows={1}
-                className="resize-none border-0 bg-transparent px-0 py-0 text-[13px] italic shadow-none focus-visible:ring-0"
-              />
-            </div>
-          </div>
+          <InstructionBar
+            value={globalInstruction}
+            onChange={setGlobalInstruction}
+            presets={userPresets}
+            onSavePreset={onSavePreset}
+            onDeletePreset={onDeletePreset}
+          />
         )}
 
         {/* Two-pane editor */}

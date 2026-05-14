@@ -16,6 +16,18 @@ export type PersonalityValue = {
   generatedAt: string;
 };
 
+export type UserPreset = {
+  id: string;
+  name: string;
+  instruction: string;
+  createdAt: number;
+};
+
+export type UserInstructionValue = {
+  current: string;
+  presets: UserPreset[];
+};
+
 export const users = pgTable("user", {
   id: text("id")
     .primaryKey()
@@ -27,6 +39,7 @@ export const users = pgTable("user", {
   createdAt: timestamp("createdAt", { mode: "date" }).defaultNow().notNull(),
   personality: jsonb("personality").$type<PersonalityValue | null>(),
   personalityDocCount: integer("personalityDocCount").notNull().default(0),
+  instruction: jsonb("instruction").$type<UserInstructionValue | null>(),
 });
 
 export const accounts = pgTable(
