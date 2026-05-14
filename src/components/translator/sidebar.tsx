@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -178,10 +179,19 @@ export function HistorySidebar({
                       e.stopPropagation();
                       arm(d.id);
                     }}
-                    className="shrink-0 text-[10px] text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                    aria-label="Delete document"
+                    className={cn(
+                      "shrink-0 inline-flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-all",
+                      // Always faintly visible so the affordance is discoverable
+                      // even before hover; brightens on row/button hover and on
+                      // keyboard focus.
+                      "opacity-40 group-hover:opacity-100 group-focus-within:opacity-100",
+                      "hover:bg-destructive/10 hover:text-destructive hover:opacity-100",
+                      "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    )}
+                    title="Delete document"
+                    aria-label={`Delete ${d.title}`}
                   >
-                    delete
+                    <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
               </div>
