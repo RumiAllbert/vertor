@@ -122,13 +122,14 @@ function neighborhood(text: string, start: number, end: number, radius = CONTEXT
   return text.slice(from, to);
 }
 
-// Word and Google Docs HTML often serialize empty paragraphs as <p><br></p> or
-// <p>&nbsp;</p>, which Turndown turns into three or four consecutive newlines.
-// Rendered markdown collapses those to a single paragraph break, but the
-// contentEditable + textarea show every \n at full line-height — so the edit
-// view looks airier than the read view. Standard markdown treats any run of
-// blank lines between paragraphs identically, so collapsing here is lossless.
-function normalizePastedMarkdown(text: string): string {
+// Markdown treats any run of 2+ blank lines as the same paragraph break, but
+// `whitespace-pre-wrap` in Edit mode renders every \n at full line-height —
+// so a stored "\n\n\n\n" looks like three empty lines in Edit while collapsing
+// down to a normal paragraph break in Read. We normalize on every data entry
+// path (paste, translation stream, doc open, revision restore) so the two
+// views stay visually aligned. User typing is intentionally NOT normalized so
+// the cursor doesn't jump when pressing Enter.
+function normalizeMarkdown(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n");
 }
 
@@ -334,7 +335,12 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   React.useEffect(() => {
     store.list().then((all) => {
       if (all.length > 0 && !doc.sourceText && !doc.translatedText) {
-        setDoc(all[0]);
+        const first = all[0];
+        setDoc({
+          ...first,
+          sourceText: normalizeMarkdown(first.sourceText),
+          translatedText: normalizeMarkdown(first.translatedText),
+        });
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -450,7 +456,11 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
       // Existing docs have intentional titles — don't auto-overwrite them.
       titleLockedRef.current = true;
       loadedFromHistoryRef.current = true; // suppress an accidental edit-capture
-      setDoc(found);
+      setDoc({
+        ...found,
+        sourceText: normalizeMarkdown(found.sourceText),
+        translatedText: normalizeMarkdown(found.translatedText),
+      });
       setDetectedLang(null);
       setSelection(null);
       setPopoverOpen(false);
@@ -519,7 +529,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           const { value, done } = await reader.read();
           if (done) break;
           acc += decoder.decode(value, { stream: true });
-          setDoc((d) => ({ ...d, translatedText: acc }));
+          setDoc((d) => ({ ...d, translatedText: normalizeMarkdown(acc) }));
         }
         // Capture the completed translation as a revision milestone. Skip if
         // the request aborted mid-flight (translation is partial).
@@ -824,8 +834,8 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
         loadedFromHistoryRef.current = true;
         setDoc((d) => ({
           ...d,
-          sourceText: out.document.sourceText,
-          translatedText: out.document.translatedText,
+          sourceText: normalizeMarkdown(out.document.sourceText),
+          translatedText: normalizeMarkdown(out.document.translatedText),
           updatedAt: Date.now(),
         }));
         setRevisions((prev) => [out.revision, ...prev]);
@@ -893,7 +903,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     e.preventDefault();
     const html = e.clipboardData.getData("text/html");
     const plain = e.clipboardData.getData("text/plain");
-    const text = normalizePastedMarkdown(html ? turndown.turndown(html) : plain);
+    const text = normalizeMarkdown(html ? turndown.turndown(html) : plain);
     if (!text) return;
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
@@ -911,7 +921,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     const plain = e.clipboardData.getData("text/plain");
     if (!html && !plain) return;
     e.preventDefault();
-    const md = normalizePastedMarkdown(html ? turndown.turndown(html) : plain);
+    const md = normalizeMarkdown(html ? turndown.turndown(html) : plain);
     const ta = e.currentTarget;
     const start = ta.selectionStart ?? doc.sourceText.length;
     const end = ta.selectionEnd ?? doc.sourceText.length;
