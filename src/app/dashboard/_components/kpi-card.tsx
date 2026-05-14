@@ -29,7 +29,10 @@ export function KpiCard({
         {value}
       </div>
       {hint && (
-        <div className="mt-2 text-[11px] italic text-muted-foreground">{hint}</div>
+        <div className="mt-2 inline-flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
+          <span aria-hidden className="inline-block h-1 w-1 rounded-full bg-ink/70" />
+          {hint}
+        </div>
       )}
     </div>
   );

@@ -106,7 +106,9 @@ export default async function DashboardPage() {
   const memberSinceLabel = stats.memberSince ? formatMonthYear(stats.memberSince) : "—";
 
   return (
-    <div className="relative isolate min-h-screen overflow-hidden bg-background text-foreground">
+    <div className="relative isolate min-h-screen overflow-x-clip bg-background text-foreground">
+      {/* Aurora lives at the page level so it can bleed across the whole
+          background while staying behind all dashboard content. */}
       <div
         aria-hidden
         className="pointer-events-none fixed inset-x-[-28vw] top-[-26vh] -z-10 h-[118vh] opacity-55"
@@ -155,7 +157,7 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <header className="flex items-center justify-between px-8 pt-8 md:px-12">
+      <header className="relative z-10 flex items-center justify-between px-8 pt-8 md:px-12">
         <Link href="/" className="display text-[20px] leading-none">
           Vertor
         </Link>
@@ -170,31 +172,8 @@ export default async function DashboardPage() {
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl px-8 pb-24 pt-14 md:px-12">
-        <section className="relative mb-12 isolate overflow-hidden">
-          {/* Soft aurora wash behind the greeting — masked to fade out at the
-              edges so it never competes with the stats below. */}
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-[-10%] -top-24 -z-10 h-72 opacity-60"
-            style={{
-              WebkitMaskImage:
-                "radial-gradient(ellipse 60% 55% at 30% 50%, black 0%, rgba(0,0,0,0.55) 55%, transparent 85%)",
-              maskImage:
-                "radial-gradient(ellipse 60% 55% at 30% 50%, black 0%, rgba(0,0,0,0.55) 55%, transparent 85%)",
-            }}
-          >
-            <SoftAurora
-              color1="#0056e3"
-              color2="#e864fa"
-              speed={0.25}
-              scale={0.55}
-              brightness={0.55}
-              noiseFrequency={3}
-              noiseAmplitude={1}
-              bandHeight={0.4}
-            />
-          </div>
+      <main className="relative z-10 mx-auto w-full max-w-5xl px-8 pb-24 pt-14 md:px-12">
+        <section className="relative mb-12">
           <h1 className="display text-[44px] italic leading-[1.05] md:text-[56px]">
             {greet(new Date())}, {firstName(userRow?.name, userRow?.email)}.
           </h1>

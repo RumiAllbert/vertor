@@ -31,7 +31,8 @@ import { MigrateBanner } from "./migrate-banner";
 import { languageName } from "@/lib/languages";
 import type { VariationKind } from "@/lib/prompts";
 import { cn } from "@/lib/utils";
-import { Check, Copy, History, LayoutGrid } from "lucide-react";
+import { Check, Copy, History, LayoutGrid, MessageSquarePlus } from "lucide-react";
+import { FEATURE_REQUEST_HREF } from "@/lib/feature-request";
 import { captureRevision, listRevisions, restoreRevision, truncate } from "@/lib/revisions";
 import type { Revision } from "@/lib/db/schema";
 import { HistoryPanel } from "./history-panel";
@@ -978,6 +979,14 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
               <span>Dashboard</span>
             </a>
           )}
+          <a
+            href={FEATURE_REQUEST_HREF}
+            className="flex shrink-0 items-center gap-2 border-t border-hairline px-5 py-3 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+            title="Email Rumi with an idea for Vertor"
+          >
+            <MessageSquarePlus className="h-3.5 w-3.5" />
+            <span>Feature request</span>
+          </a>
         </div>
       )}
 
