@@ -1382,7 +1382,10 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                         top: Math.max(8, selection.rect.bottom + 6),
                         left: Math.min(
                           Math.max(8, selection.rect.left),
-                          (typeof window !== "undefined" ? window.innerWidth : 9999) - 220,
+                          Math.max(
+                            8,
+                            (typeof window !== "undefined" ? window.innerWidth : 9999) - 220,
+                          ),
                         ),
                       }}
                     >
