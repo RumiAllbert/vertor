@@ -185,6 +185,21 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     if (window.innerWidth < 768) setSidebarOpen(false);
   }, []);
 
+  // One-time notice (mobile only, via md:hidden) that Vertor is built for desktop.
+  const [mobileNoticeOpen, setMobileNoticeOpen] = React.useState(false);
+  React.useEffect(() => {
+    if (localStorage.getItem("vertor:mobile-notice") !== "dismissed") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMobileNoticeOpen(true);
+    }
+  }, []);
+  const dismissMobileNotice = () => {
+    setMobileNoticeOpen(false);
+    try {
+      localStorage.setItem("vertor:mobile-notice", "dismissed");
+    } catch {}
+  };
+
   const copyTranslation = React.useCallback(async () => {
     if (!doc.translatedText) return;
     try {
@@ -571,6 +586,8 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const translate = React.useCallback(
     async (overrideInstruction?: string) => {
       if (!doc.sourceText.trim()) return;
+      // On mobile, surface the translation tab so the streaming result is visible.
+      setMobilePane("translation");
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -1521,6 +1538,27 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             }}
           />
         </>
+      )}
+
+      {mobileNoticeOpen && (
+        <div
+          role="status"
+          className="fade-up fixed inset-x-3 bottom-4 z-50 flex items-start gap-3 border border-foreground bg-background px-3.5 py-3 text-[12px] shadow-[2px_2px_0_var(--ink)] md:hidden"
+        >
+          <p className="flex-1 leading-snug text-muted-foreground">
+            Vertor works on mobile, but it&apos;s designed for a{" "}
+            <span className="font-medium text-foreground">desktop</span> screen — open it
+            on a larger display for the full side-by-side experience.
+          </p>
+          <button
+            type="button"
+            onClick={dismissMobileNotice}
+            aria-label="Dismiss"
+            className="shrink-0 text-[16px] leading-none text-muted-foreground transition-colors hover:text-foreground"
+          >
+            ×
+          </button>
+        </div>
       )}
     </div>
   );
