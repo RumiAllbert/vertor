@@ -24,6 +24,29 @@ export function DiffView({ revision, currentText, restoring, onRestore, onBack }
     [revision.translatedText, currentText],
   );
 
+  const [hint, setHint] = React.useState<{ top: number; left: number } | null>(null);
+  const hintTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showHint = React.useCallback((e: React.MouseEvent | React.KeyboardEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    let top = rect.top + 24;
+    let left = rect.left + 40;
+    if ("clientX" in e) {
+      top = (e as React.MouseEvent).clientY + 12;
+      left = (e as React.MouseEvent).clientX + 12;
+    }
+    setHint({ top, left });
+    if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    hintTimerRef.current = setTimeout(() => setHint(null), 2200);
+  }, []);
+
+  React.useEffect(
+    () => () => {
+      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    },
+    [],
+  );
+
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       {/* Banner */}
@@ -67,7 +90,22 @@ export function DiffView({ revision, currentText, restoring, onRestore, onBack }
       </div>
 
       {/* Diff body */}
-      <div className="editor-surface min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap px-10 pt-7 pb-10">
+      <div
+        tabIndex={0}
+        onClick={showHint}
+        onKeyDown={(e) => {
+          if (
+            e.key.length === 1 ||
+            e.key === "Backspace" ||
+            e.key === "Delete" ||
+            e.key === "Enter"
+          ) {
+            e.preventDefault();
+            showHint(e);
+          }
+        }}
+        className="editor-surface min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap px-10 pt-7 pb-10 outline-none"
+      >
         {segments.length === 0 ? (
           <p className="italic text-muted-foreground">No content in this revision.</p>
         ) : (
@@ -87,6 +125,21 @@ export function DiffView({ revision, currentText, restoring, onRestore, onBack }
           })
         )}
       </div>
+
+      {hint && (
+        <div
+          role="status"
+          className="fade-up fixed z-50 max-w-[260px] border border-foreground bg-background px-3 py-2 text-[11.5px] leading-snug text-foreground shadow-[2px_2px_0_var(--ink)]"
+          style={{ top: hint.top, left: hint.left }}
+        >
+          <div className="small-caps mb-1">Read-only</div>
+          <div className="italic text-muted-foreground">
+            You’re viewing a past revision. Click{" "}
+            <span className="not-italic font-medium text-foreground">Restore this version</span>{" "}
+            to edit.
+          </div>
+        </div>
+      )}
     </div>
   );
 }

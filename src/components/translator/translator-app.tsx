@@ -31,6 +31,7 @@ import { MigrateBanner } from "./migrate-banner";
 import { languageName } from "@/lib/languages";
 import type { VariationKind } from "@/lib/prompts";
 import { cn } from "@/lib/utils";
+import { Check, Copy, History, LayoutGrid } from "lucide-react";
 import { captureRevision, listRevisions, restoreRevision, truncate } from "@/lib/revisions";
 import type { Revision } from "@/lib/db/schema";
 import { HistoryPanel } from "./history-panel";
@@ -80,15 +81,38 @@ const ALIGN_MAX_SELECTION = 1500;
 
 const CONTEXT_RADIUS = 240;
 
+// Scripts that don't separate words with whitespace: CJK ideographs, hiragana,
+// katakana, Thai, Lao, Khmer, Myanmar. For these, whitespace tells us nothing
+// about word boundaries, so classification must fall back to length and the
+// presence of paragraph breaks / sentence terminators instead.
+const SCRIPTLESS_WS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+
 function classifySelection(translation: string, start: number, end: number): VariationKind {
   const text = translation.slice(start, end).trim();
   if (!text) return "phrase";
-  if (!/\s/.test(text)) return "word";
   const before = translation.slice(0, start);
   const after = translation.slice(end);
   const beforeBoundary = !before || /\n\s*\n\s*$/.test(before) || start === 0;
   const afterBoundary = !after || /^\s*\n\s*\n/.test(after) || end === translation.length;
-  if (beforeBoundary && afterBoundary && text.length > 40) return "paragraph";
+
+  // Paragraph: selection spans a whole block and is long enough.
+  if (beforeBoundary && afterBoundary) {
+    const len = [...text].length;
+    if (SCRIPTLESS_WS.test(text)) {
+      if (len > 12) return "paragraph";
+    } else if (text.length > 40) {
+      return "paragraph";
+    }
+  }
+
+  // For CJK / Thai / etc.: no whitespace ≠ "single word". Use Unicode
+  // codepoint count — 1 ideograph is a word, anything longer is a phrase.
+  if (SCRIPTLESS_WS.test(text)) {
+    const len = [...text].length;
+    return len <= 1 ? "word" : "phrase";
+  }
+
+  if (!/\s/.test(text)) return "word";
   return "phrase";
 }
 
@@ -125,6 +149,37 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
   const [selection, setSelection] = React.useState<SelectionInfo | null>(null);
   const [popoverOpen, setPopoverOpen] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  const copyTranslation = React.useCallback(async () => {
+    if (!doc.translatedText) return;
+    try {
+      await navigator.clipboard.writeText(doc.translatedText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  }, [doc.translatedText]);
+
+  // Floating "switch to Edit to edit" hint shown when the user clicks or types
+  // inside a Read-mode pane. Cleared on a timer.
+  const [readHint, setReadHint] = React.useState<{ top: number; left: number; pane: "source" | "translation" } | null>(null);
+  const readHintTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showReadHint = React.useCallback(
+    (e: React.MouseEvent | React.KeyboardEvent, pane: "source" | "translation") => {
+      const top = "clientY" in e ? (e as React.MouseEvent).clientY + 12 : 0;
+      const left = "clientX" in e ? (e as React.MouseEvent).clientX + 12 : 0;
+      setReadHint({ top, left, pane });
+      if (readHintTimerRef.current) clearTimeout(readHintTimerRef.current);
+      readHintTimerRef.current = setTimeout(() => setReadHint(null), 2200);
+    },
+    [],
+  );
+  React.useEffect(
+    () => () => {
+      if (readHintTimerRef.current) clearTimeout(readHintTimerRef.current);
+    },
+    [],
+  );
 
   const [alignment, setAlignment] = React.useState<Alignment | null>(null);
   const alignAbortRef = React.useRef<AbortController | null>(null);
@@ -896,6 +951,15 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             onDelete={removeDocument}
             hideOuterShell
           />
+          {session.user && (
+            <a
+              href="/dashboard"
+              className="flex shrink-0 items-center gap-2 border-t border-hairline px-5 py-3 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span>Dashboard</span>
+            </a>
+          )}
         </div>
       )}
 
@@ -1002,19 +1066,6 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             instruction
           </button>
 
-          <button
-            onClick={() => setHistoryOpen((o) => !o)}
-            disabled={!session.user}
-            title={session.user ? undefined : "Sign in to enable history"}
-            className={cn(
-              "h-8 text-[12px] transition-colors",
-              historyOpen ? "text-ink" : "text-muted-foreground hover:text-foreground",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-            )}
-          >
-            history
-          </button>
-
           <ModeToggle mode={mode} onChange={setMode} />
 
           <div className="ml-auto flex items-center gap-2">
@@ -1060,7 +1111,23 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                 className="editor-surface min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-10 pt-7 pb-10 shadow-none focus-visible:ring-0"
               />
             ) : (
-              <div className="min-h-0 flex-1 overflow-y-auto px-10 pt-7 pb-10">
+              <div
+                role="region"
+                tabIndex={0}
+                onClick={(e) => showReadHint(e, "source")}
+                onKeyDown={(e) => {
+                  if (
+                    e.key.length === 1 ||
+                    e.key === "Backspace" ||
+                    e.key === "Delete" ||
+                    e.key === "Enter"
+                  ) {
+                    e.preventDefault();
+                    showReadHint(e, "source");
+                  }
+                }}
+                className="min-h-0 flex-1 overflow-y-auto px-10 pt-7 pb-10 outline-none"
+              >
                 <MarkdownView source={doc.sourceText} />
               </div>
             )}
@@ -1071,12 +1138,53 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
           {/* Translation */}
           <section className="flex min-w-0 min-h-0 flex-col">
-            <div className="flex items-baseline justify-between border-b border-hairline px-10 py-3">
+            <div className="flex items-baseline justify-between gap-3 border-b border-hairline px-10 py-3">
               <span className="small-caps">Translation</span>
-              <div className="flex items-baseline gap-3">
+              <div className="flex items-center gap-3">
                 <span className="font-mono text-[10.5px] text-muted-foreground">
                   {doc.targetLang} · {wordCount(doc.translatedText)} {wordCount(doc.translatedText) === 1 ? "word" : "words"}
                 </span>
+                <button
+                  type="button"
+                  onClick={copyTranslation}
+                  disabled={!doc.translatedText.trim()}
+                  aria-label={copied ? "Copied" : "Copy translation"}
+                  title={copied ? "Copied" : "Copy translation"}
+                  className={cn(
+                    "inline-flex h-6 items-center gap-1 rounded-sm px-1.5 text-[11px] transition-colors",
+                    copied
+                      ? "text-ink"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                    "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
+                  )}
+                >
+                  {copied ? (
+                    <>
+                      <Check className="h-3 w-3" />
+                      <span className="italic">Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen((o) => !o)}
+                  disabled={!session.user}
+                  aria-label="Revision history"
+                  title={session.user ? "Revision history" : "Sign in to enable history"}
+                  className={cn(
+                    "inline-flex h-6 items-center gap-1 rounded-sm px-1.5 text-[11px] transition-colors",
+                    historyOpen ? "text-ink bg-ink/10" : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                    "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
+                  )}
+                >
+                  <History className="h-3 w-3" />
+                  <span>History</span>
+                </button>
                 <ViewToggle
                   mode={translationViewMode}
                   onToggle={() => setTranslationViewMode((m) => (m === "edit" ? "read" : "edit"))}
@@ -1177,7 +1285,23 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                 </>
               ) : (
                 doc.translatedText && (
-                  <div className="px-10 pt-7 pb-10">
+                  <div
+                    role="region"
+                    tabIndex={0}
+                    onClick={(e) => showReadHint(e, "translation")}
+                    onKeyDown={(e) => {
+                      if (
+                        e.key.length === 1 ||
+                        e.key === "Backspace" ||
+                        e.key === "Delete" ||
+                        e.key === "Enter"
+                      ) {
+                        e.preventDefault();
+                        showReadHint(e, "translation");
+                      }
+                    }}
+                    className="px-10 pt-7 pb-10 outline-none"
+                  >
                     <MarkdownView source={doc.translatedText} />
                   </div>
                 )
@@ -1223,6 +1347,20 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           </span>
         </footer>
       </main>
+
+      {readHint && (
+        <div
+          role="status"
+          className="fade-up fixed z-50 max-w-[260px] border border-foreground bg-background px-3 py-2 text-[11.5px] leading-snug text-foreground shadow-[2px_2px_0_var(--ink)]"
+          style={{ top: readHint.top, left: readHint.left }}
+        >
+          <div className="small-caps mb-1">Read mode</div>
+          <div className="italic text-muted-foreground">
+            To edit this {readHint.pane}, switch the toggle to{" "}
+            <span className="not-italic font-medium text-foreground">Edit</span>.
+          </div>
+        </div>
+      )}
 
       {historyOpen && session.user && (
         <HistoryPanel
