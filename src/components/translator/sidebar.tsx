@@ -182,14 +182,19 @@ export function HistorySidebar({
                       arm(d.id);
                     }}
                     className={cn(
-                      "shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-sm text-muted-foreground transition-colors",
-                      "hover:bg-destructive/10 hover:text-destructive",
+                      "shrink-0 inline-flex h-7 items-center gap-1 rounded-sm px-1.5 text-[11px] transition-colors",
+                      // Use foreground (slightly dimmed) so the button is
+                      // unambiguously visible against the muted sidebar bg
+                      // without dominating the title. Hover turns the whole
+                      // chip destructive red.
+                      "text-foreground/70 hover:bg-destructive/10 hover:text-destructive",
                       "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                     )}
                     title="Delete document"
                     aria-label={`Delete ${d.title}`}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>Delete</span>
                   </button>
                 )}
               </div>

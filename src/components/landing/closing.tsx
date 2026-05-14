@@ -1,34 +1,7 @@
 import Link from "next/link";
+import { CONTACT_EMAIL, FEATURE_REQUEST_HREF } from "@/lib/feature-request";
 
 const REPO_URL = "https://github.com/RumiAllbert/vertor";
-const CONTACT_EMAIL = "rumiallbert@gmail.com";
-
-// Plain-text template for feature requests. encodeURIComponent runs once at
-// module load — keeps the JSX legible and ensures newlines render as %0A.
-const FEATURE_REQUEST_SUBJECT = "Vertor — feature request";
-const FEATURE_REQUEST_BODY = `Hi Rumi,
-
-What would you like Vertor to do that it doesn't yet?
-
-(a sentence or two)
-
-
-Why would it help your workflow?
-
-(a paragraph is plenty — who you are, what you translate, where Vertor falls short today)
-
-
-Examples or references (optional):
-
-(links, screenshots, prior art in other tools)
-
-
-—
-Sent from vertor.vercel.app`;
-
-const FEATURE_REQUEST_HREF = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(
-  FEATURE_REQUEST_SUBJECT,
-)}&body=${encodeURIComponent(FEATURE_REQUEST_BODY)}`;
 
 export function Closing({ authEnabled }: { authEnabled: boolean }) {
   return (
