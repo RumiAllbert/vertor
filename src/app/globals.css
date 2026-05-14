@@ -148,6 +148,11 @@ svg.lucide,
   letter-spacing: -0.003em;
   font-feature-settings: "kern", "liga", "onum";
 }
+@media (max-width: 767px) {
+  .editor-surface {
+    font-size: 16px;
+  }
+}
 .editor-surface p {
   margin: 0 0 1em 0;
 }
