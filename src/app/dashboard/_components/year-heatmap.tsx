@@ -1,21 +1,21 @@
 // Year-in-glance heatmap. Renders ~53 weekly columns of 7 day cells. Cells
-// scale through five ink-tinted intensities. Editorial palette only — no
-// rainbow.
+// scale through a small editorial color ramp so the dashboard feels less
+// monochrome without losing the printed-calendar mood.
 
-const INTENSITY_CLASSES = [
-  "bg-hairline/60",
-  "bg-ink/15",
-  "bg-ink/30",
-  "bg-ink/55",
-  "bg-ink/80",
+const INTENSITY_COLORS = [
+  "color-mix(in oklch, var(--hairline) 60%, transparent)",
+  "color-mix(in oklch, #0056e3 18%, var(--background))",
+  "color-mix(in oklch, #12a594 30%, var(--background))",
+  "color-mix(in oklch, #e85d75 45%, var(--background))",
+  "color-mix(in oklch, #f4a261 62%, var(--background))",
 ];
 
-function intensityClass(count: number, maxCount: number): string {
-  if (count <= 0 || maxCount <= 0) return INTENSITY_CLASSES[0];
+function intensityColor(count: number, maxCount: number): string {
+  if (count <= 0 || maxCount <= 0) return INTENSITY_COLORS[0];
   // Bucket into 4 active intensities; clamp the noisy top end.
   const t = Math.min(1, count / Math.max(2, maxCount));
   const idx = 1 + Math.min(3, Math.floor(t * 4));
-  return INTENSITY_CLASSES[idx];
+  return INTENSITY_COLORS[idx];
 }
 
 function monthLabel(iso: string): string {
@@ -99,14 +99,14 @@ export function YearHeatmap({ data }: { data: { day: string; count: number }[] }
                     />
                   );
                 }
-                const cls = intensityClass(cellData.count, maxCount);
+                const color = intensityColor(cellData.count, maxCount);
                 const title = `${cellData.count} on ${cellData.day}`;
                 return (
                   <span
                     key={row}
                     title={title}
-                    className={`rounded-[2px] ${cls}`}
-                    style={{ width: cell, height: cell }}
+                    className="rounded-[2px]"
+                    style={{ width: cell, height: cell, backgroundColor: color }}
                   />
                 );
               })}
@@ -124,11 +124,11 @@ export function YearHeatmap({ data }: { data: { day: string; count: number }[] }
           </span>
           <span className="flex items-center gap-1.5">
             <span className="not-italic">less</span>
-            {INTENSITY_CLASSES.map((c, i) => (
+            {INTENSITY_COLORS.map((color, i) => (
               <span
                 key={i}
-                className={`inline-block rounded-[2px] ${c}`}
-                style={{ width: 10, height: 10 }}
+                className="inline-block rounded-[2px]"
+                style={{ width: 10, height: 10, backgroundColor: color }}
               />
             ))}
             <span className="not-italic">more</span>

@@ -106,7 +106,57 @@ export default async function DashboardPage() {
   const memberSinceLabel = stats.memberSince ? formatMonthYear(stats.memberSince) : "—";
 
   return (
-    <div className="relative min-h-screen overflow-x-clip bg-background text-foreground">
+    <div className="relative isolate min-h-screen overflow-x-clip bg-background text-foreground">
+      {/* Aurora lives at the page level so it can bleed across the whole
+          background while staying behind all dashboard content. */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-x-[-28vw] top-[-26vh] -z-10 h-[118vh] opacity-55"
+        style={{
+          WebkitMaskImage:
+            "radial-gradient(ellipse 72% 56% at 50% 34%, black 0%, rgba(0,0,0,0.74) 42%, rgba(0,0,0,0.28) 70%, transparent 100%)",
+          maskImage:
+            "radial-gradient(ellipse 72% 56% at 50% 34%, black 0%, rgba(0,0,0,0.74) 42%, rgba(0,0,0,0.28) 70%, transparent 100%)",
+        }}
+      >
+        <SoftAurora
+          color1="#0056e3"
+          color2="#ff6f61"
+          speed={0.18}
+          scale={0.82}
+          brightness={0.42}
+          noiseFrequency={2.4}
+          noiseAmplitude={1.15}
+          bandHeight={0.36}
+          bandSpread={1.15}
+          enableMouseInteraction={false}
+        />
+      </div>
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-x-[-22vw] top-[34vh] -z-10 h-[90vh] opacity-35"
+        style={{
+          WebkitMaskImage:
+            "radial-gradient(ellipse 62% 42% at 56% 42%, black 0%, rgba(0,0,0,0.42) 56%, transparent 92%)",
+          maskImage:
+            "radial-gradient(ellipse 62% 42% at 56% 42%, black 0%, rgba(0,0,0,0.42) 56%, transparent 92%)",
+        }}
+      >
+        <SoftAurora
+          color1="#12a594"
+          color2="#f7b538"
+          speed={0.12}
+          scale={1.05}
+          brightness={0.24}
+          noiseFrequency={1.9}
+          noiseAmplitude={0.95}
+          bandHeight={0.48}
+          bandSpread={0.95}
+          layerOffset={1.2}
+          enableMouseInteraction={false}
+        />
+      </div>
+
       <header className="relative z-10 flex items-center justify-between px-8 pt-8 md:px-12">
         <Link href="/" className="display text-[20px] leading-none">
           Vertor
@@ -122,31 +172,6 @@ export default async function DashboardPage() {
         </nav>
       </header>
 
-      {/* Aurora lives at the page level so it can bleed past the content
-          column on either side — masked to fade at the edges and stay behind
-          everything. */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-12 z-0 h-[420px] opacity-70"
-        style={{
-          WebkitMaskImage:
-            "radial-gradient(ellipse 55% 60% at 28% 45%, black 0%, rgba(0,0,0,0.6) 50%, transparent 85%)",
-          maskImage:
-            "radial-gradient(ellipse 55% 60% at 28% 45%, black 0%, rgba(0,0,0,0.6) 50%, transparent 85%)",
-        }}
-      >
-        <SoftAurora
-          color1="#0056e3"
-          color2="#e864fa"
-          speed={0.25}
-          scale={0.7}
-          brightness={0.6}
-          noiseFrequency={3}
-          noiseAmplitude={1}
-          bandHeight={0.4}
-        />
-      </div>
-
       <main className="relative z-10 mx-auto w-full max-w-5xl px-8 pb-24 pt-14 md:px-12">
         <section className="relative mb-12">
           <h1 className="display text-[44px] italic leading-[1.05] md:text-[56px]">
@@ -161,17 +186,19 @@ export default async function DashboardPage() {
           <EmptyState />
         ) : (
           <>
-            <section className="mb-14 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-hairline bg-hairline md:grid-cols-4">
-              <KpiCard label="Translations" value={stats.totalDocs.toLocaleString()} />
+            <section className="mb-14 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-hairline bg-hairline/80 shadow-[0_24px_80px_color-mix(in_oklch,var(--ink)_9%,transparent)] md:grid-cols-4">
+              <KpiCard label="Translations" value={stats.totalDocs.toLocaleString()} accent="#0056e3" />
               <KpiCard
                 label="Words translated"
                 value={stats.totalWords.toLocaleString()}
                 hint={wordEquivalent(stats.totalWords)}
+                accent="#e85d75"
               />
-              <KpiCard label="Languages reached" value={stats.languagesReached.toLocaleString()} />
+              <KpiCard label="Languages reached" value={stats.languagesReached.toLocaleString()} accent="#12a594" />
               <KpiCard
                 label="Current streak"
                 value={`${stats.currentStreak} ${stats.currentStreak === 1 ? "day" : "days"}`}
+                accent="#f4a261"
                 hint={
                   stats.longestStreak > 0
                     ? `Best yet · ${stats.longestStreak} day${stats.longestStreak === 1 ? "" : "s"}`
