@@ -21,6 +21,7 @@ import { MigrateBanner } from "./migrate-banner";
 import { languageName } from "@/lib/languages";
 import type { VariationKind } from "@/lib/prompts";
 import { cn } from "@/lib/utils";
+import { Check, Copy, History, LayoutGrid } from "lucide-react";
 import { captureRevision, listRevisions, restoreRevision, truncate } from "@/lib/revisions";
 import type { Revision } from "@/lib/db/schema";
 import { HistoryPanel } from "./history-panel";
@@ -91,6 +92,16 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
   const [selection, setSelection] = React.useState<SelectionInfo | null>(null);
   const [popoverOpen, setPopoverOpen] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  const copyTranslation = React.useCallback(async () => {
+    if (!doc.translatedText) return;
+    try {
+      await navigator.clipboard.writeText(doc.translatedText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  }, [doc.translatedText]);
 
   // Revision history state
   const [revisions, setRevisions] = React.useState<Revision[]>([]);
@@ -587,6 +598,15 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             onDelete={removeDocument}
             hideOuterShell
           />
+          {session.user && (
+            <a
+              href="/dashboard"
+              className="flex shrink-0 items-center gap-2 border-t border-hairline px-5 py-3 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" />
+              <span>Dashboard</span>
+            </a>
+          )}
         </div>
       )}
 
@@ -693,19 +713,6 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
             instruction
           </button>
 
-          <button
-            onClick={() => setHistoryOpen((o) => !o)}
-            disabled={!session.user}
-            title={session.user ? undefined : "Sign in to enable history"}
-            className={cn(
-              "h-8 text-[12px] transition-colors",
-              historyOpen ? "text-ink" : "text-muted-foreground hover:text-foreground",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-            )}
-          >
-            history
-          </button>
-
           <ModeToggle mode={mode} onChange={setMode} />
 
           <div className="ml-auto flex items-center gap-2">
@@ -752,11 +759,54 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
           {/* Translation */}
           <section className="flex min-w-0 min-h-0 flex-col">
-            <div className="flex items-baseline justify-between border-b border-hairline px-10 py-3">
+            <div className="flex items-baseline justify-between gap-3 border-b border-hairline px-10 py-3">
               <span className="small-caps">Translation</span>
-              <span className="font-mono text-[10.5px] text-muted-foreground">
-                {doc.targetLang} · {wordCount(doc.translatedText)} {wordCount(doc.translatedText) === 1 ? "word" : "words"}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[10.5px] text-muted-foreground">
+                  {doc.targetLang} · {wordCount(doc.translatedText)} {wordCount(doc.translatedText) === 1 ? "word" : "words"}
+                </span>
+                <button
+                  type="button"
+                  onClick={copyTranslation}
+                  disabled={!doc.translatedText.trim()}
+                  aria-label={copied ? "Copied" : "Copy translation"}
+                  title={copied ? "Copied" : "Copy translation"}
+                  className={cn(
+                    "inline-flex h-6 items-center gap-1 rounded-sm px-1.5 text-[11px] transition-colors",
+                    copied
+                      ? "text-ink"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                    "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
+                  )}
+                >
+                  {copied ? (
+                    <>
+                      <Check className="h-3 w-3" />
+                      <span className="italic">Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryOpen((o) => !o)}
+                  disabled={!session.user}
+                  aria-label="Revision history"
+                  title={session.user ? "Revision history" : "Sign in to enable history"}
+                  className={cn(
+                    "inline-flex h-6 items-center gap-1 rounded-sm px-1.5 text-[11px] transition-colors",
+                    historyOpen ? "text-ink bg-ink/10" : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                    "disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
+                  )}
+                >
+                  <History className="h-3 w-3" />
+                  <span>History</span>
+                </button>
+              </div>
             </div>
             {selectedRevision ? (
               <DiffView
