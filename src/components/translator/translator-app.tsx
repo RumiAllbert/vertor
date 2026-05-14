@@ -98,6 +98,16 @@ function neighborhood(text: string, start: number, end: number, radius = CONTEXT
   return text.slice(from, to);
 }
 
+// Word and Google Docs HTML often serialize empty paragraphs as <p><br></p> or
+// <p>&nbsp;</p>, which Turndown turns into three or four consecutive newlines.
+// Rendered markdown collapses those to a single paragraph break, but the
+// contentEditable + textarea show every \n at full line-height — so the edit
+// view looks airier than the read view. Standard markdown treats any run of
+// blank lines between paragraphs identically, so collapsing here is lossless.
+function normalizePastedMarkdown(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+}
+
 export function TranslatorApp({ session }: { session: SessionInfo }) {
   const [docs, setDocs] = React.useState<LocalDoc[]>([]);
   const [doc, setDoc] = React.useState<LocalDoc>(() => newLocalDoc());
@@ -828,7 +838,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     e.preventDefault();
     const html = e.clipboardData.getData("text/html");
     const plain = e.clipboardData.getData("text/plain");
-    const text = html ? turndown.turndown(html) : plain;
+    const text = normalizePastedMarkdown(html ? turndown.turndown(html) : plain);
     if (!text) return;
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
@@ -846,7 +856,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     const plain = e.clipboardData.getData("text/plain");
     if (!html && !plain) return;
     e.preventDefault();
-    const md = html ? turndown.turndown(html) : plain;
+    const md = normalizePastedMarkdown(html ? turndown.turndown(html) : plain);
     const ta = e.currentTarget;
     const start = ta.selectionStart ?? doc.sourceText.length;
     const end = ta.selectionEnd ?? doc.sourceText.length;
