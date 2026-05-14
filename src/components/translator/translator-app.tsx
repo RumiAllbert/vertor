@@ -129,8 +129,16 @@ function neighborhood(text: string, start: number, end: number, radius = CONTEXT
 // path (paste, translation stream, doc open, revision restore) so the two
 // views stay visually aligned. User typing is intentionally NOT normalized so
 // the cursor doesn't jump when pressing Enter.
+//
+// The regex collapses any sequence of two-or-more "newline + whitespace-only
+// line" runs down to a single blank line. This catches Word / Google Docs
+// HTML serialized as <p>&nbsp;</p> (which Turndown emits as "\n\n \n\n",
+// non-breaking-space and all — bare \n{3,} would miss the in-between space
+// and leave several visible blank lines in Edit mode).
 function normalizeMarkdown(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/(\n[ \t ]*){2,}/g, "\n\n");
 }
 
 export function TranslatorApp({ session }: { session: SessionInfo }) {
