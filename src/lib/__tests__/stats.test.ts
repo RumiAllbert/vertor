@@ -141,4 +141,32 @@ describe("computeStats", () => {
     const totalInWindow = s.activityLast30.reduce((a, b) => a + b.count, 0);
     expect(totalInWindow).toBe(3); // old doc excluded
   });
+
+  it("awards editorial milestone stamps for larger usage patterns", () => {
+    const saturday = new Date("2026-02-07T12:00:00Z");
+    const sunday = new Date("2026-02-08T12:00:00Z");
+    const monday = new Date("2026-02-09T12:00:00Z");
+    const longText = Array.from({ length: 25_000 }, (_, i) => `w${i}`).join(" ");
+    const docs = [
+      doc({ id: "sat", sourceText: "weekend", createdAt: saturday }),
+      doc({ id: "sun", sourceText: "weekend", createdAt: sunday }),
+      doc({ id: "mon", sourceText: longText, createdAt: monday }),
+      ...Array.from({ length: 47 }, (_, i) =>
+        doc({
+          id: `archive-${i}`,
+          sourceText: "saved",
+          createdAt: new Date(`2026-01-${String((i % 20) + 1).padStart(2, "0")}T12:00:00Z`),
+        }),
+      ),
+    ];
+
+    const milestones = computeStats(docs, memberSince, now).milestones;
+    const byId = new Map(milestones.map((m) => [m.id, m]));
+
+    expect(byId.get("line-editor")?.earned).toBe(true);
+    expect(byId.get("hot-streak")?.earned).toBe(true);
+    expect(byId.get("archivist")?.earned).toBe(true);
+    expect(byId.get("long-haul")?.earned).toBe(true);
+    expect(byId.get("weekend-edition")?.earned).toBe(true);
+  });
 });

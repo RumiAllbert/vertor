@@ -9,6 +9,11 @@ const STAMP_INDEX: Record<string, number> = {
   "night-owl": 4,
   "sunday-translator": 5,
   centennial: 6,
+  "line-editor": 7,
+  "hot-streak": 8,
+  archivist: 9,
+  "long-haul": 10,
+  "weekend-edition": 11,
 };
 
 const STAMP_ACCENTS = [
@@ -19,7 +24,62 @@ const STAMP_ACCENTS = [
   "#1f4f8f",
   "#f4a261",
   "#d84a4a",
+  "#d84a4a",
+  "#f97316",
+  "#8f3f97",
+  "#12a594",
+  "#0056e3",
 ];
+
+export function stampIndexFor(id: string): number {
+  return STAMP_INDEX[id] ?? 0;
+}
+
+export function stampAccentFor(stampIndex: number): string {
+  return STAMP_ACCENTS[stampIndex % STAMP_ACCENTS.length];
+}
+
+export function spriteFor(stampIndex: number): { url: string; position: string; size: string } {
+  if (stampIndex < 7) {
+    return {
+      url: "/dashboard/stamp-sprite.png",
+      position: `${(stampIndex / 6) * 100}% 50%`,
+      size: "700% 100%",
+    };
+  }
+  return {
+    url: "/dashboard/stamp-sprite-2.png",
+    position: `${((stampIndex - 7) / 4) * 100}% 50%`,
+    size: "500% 100%",
+  };
+}
+
+export function StampArt({
+  stampIndex,
+  earned = true,
+  className,
+}: {
+  stampIndex: number;
+  earned?: boolean;
+  className?: string;
+}) {
+  const sprite = spriteFor(stampIndex);
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "dashboard-stamp-art h-12 w-12 shrink-0 drop-shadow-[0_7px_12px_color-mix(in_oklch,var(--stamp-accent)_18%,transparent)] transition duration-200 group-hover:scale-105",
+        earned ? "" : "opacity-[0.42]",
+        className,
+      )}
+      style={{
+        backgroundImage: `url('${sprite.url}')`,
+        backgroundPosition: sprite.position,
+        "--stamp-sprite-size": sprite.size,
+      } as React.CSSProperties}
+    />
+  );
+}
 
 // Passport-style stamps backed by the generated sticker sprite in /public.
 // Earned stamps are saturated and reveal their unlock note on hover; locked
@@ -37,8 +97,8 @@ export function Milestones({ items }: { items: Milestone[] }) {
       </div>
       <ul className="flex flex-wrap gap-3.5">
         {items.map((m) => {
-          const stampIndex = STAMP_INDEX[m.id] ?? 0;
-          const accent = STAMP_ACCENTS[stampIndex % STAMP_ACCENTS.length];
+          const stampIndex = stampIndexFor(m.id);
+          const accent = stampAccentFor(stampIndex);
           return (
             <li
               key={m.id}
@@ -56,17 +116,7 @@ export function Milestones({ items }: { items: Milestone[] }) {
               } as React.CSSProperties}
             >
               <span className="relative z-10 inline-flex items-center gap-2 overflow-hidden rounded-[5px]">
-                <span
-                  aria-hidden
-                  className={cn(
-                    "dashboard-stamp-art h-12 w-12 shrink-0 drop-shadow-[0_7px_12px_color-mix(in_oklch,var(--stamp-accent)_18%,transparent)] transition duration-200 group-hover:scale-105",
-                    m.earned ? "" : "opacity-[0.42]",
-                  )}
-                  style={{
-                    backgroundImage: "url('/dashboard/stamp-sprite.png')",
-                    backgroundPosition: `${(stampIndex / 6) * 100}% 50%`,
-                  }}
-                />
+                <StampArt stampIndex={stampIndex} earned={m.earned} />
                 <span
                   className={cn(
                     "italic leading-tight",

@@ -40,6 +40,11 @@ import { DiffView } from "./diff-view";
 import { MarkdownView } from "./markdown-view";
 import { AlignmentOverlay } from "./alignment-overlay";
 import {
+  StampArt,
+  stampAccentFor,
+  stampIndexFor,
+} from "@/app/dashboard/_components/milestones";
+import {
   splitParagraphs,
   findParagraphIndex,
   alignCacheKey,
@@ -50,6 +55,13 @@ import {
 } from "@/lib/alignment";
 
 type ViewMode = "edit" | "read";
+
+type EarnedMilestone = {
+  id: string;
+  label: string;
+  hint: string;
+  earned: boolean;
+};
 
 type SelectionInfo = {
   text: string;
@@ -160,6 +172,9 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const [selection, setSelection] = React.useState<SelectionInfo | null>(null);
   const [popoverOpen, setPopoverOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  const [earnedStamp, setEarnedStamp] = React.useState<EarnedMilestone | null>(null);
+  const milestonesHydratedRef = React.useRef(false);
+  const earnedStampTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const copyTranslation = React.useCallback(async () => {
     if (!doc.translatedText) return;
@@ -187,6 +202,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   React.useEffect(
     () => () => {
       if (readHintTimerRef.current) clearTimeout(readHintTimerRef.current);
+      if (earnedStampTimerRef.current) clearTimeout(earnedStampTimerRef.current);
     },
     [],
   );
@@ -246,6 +262,42 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   React.useEffect(() => {
     store.list().then(setDocs);
   }, [store]);
+
+  const syncEarnedMilestones = React.useCallback(
+    async ({ announce }: { announce: boolean }) => {
+      if (!session.user) return;
+      try {
+        const res = await fetch("/api/user/milestones");
+        if (!res.ok) return;
+        const { milestones } = (await res.json()) as { milestones: EarnedMilestone[] };
+        const earned = milestones.filter((m) => m.earned);
+        const key = `vertor.earnedMilestones.v1.${session.user.email ?? "user"}`;
+        const previous = new Set(JSON.parse(localStorage.getItem(key) ?? "[]") as string[]);
+        const earnedIds = earned.map((m) => m.id);
+        localStorage.setItem(key, JSON.stringify(earnedIds));
+
+        if (!milestonesHydratedRef.current) {
+          milestonesHydratedRef.current = true;
+          return;
+        }
+        if (!announce) return;
+
+        const fresh = earned.find((m) => !previous.has(m.id));
+        if (!fresh) return;
+        setEarnedStamp(fresh);
+        if (earnedStampTimerRef.current) clearTimeout(earnedStampTimerRef.current);
+        earnedStampTimerRef.current = setTimeout(() => setEarnedStamp(null), 5200);
+      } catch {
+        // Non-critical flourish: never interrupt translating or saving.
+      }
+    },
+    [session.user],
+  );
+
+  React.useEffect(() => {
+    milestonesHydratedRef.current = false;
+    syncEarnedMilestones({ announce: false });
+  }, [syncEarnedMilestones]);
 
   // Hydrate the instruction bar (current text + user presets) once per
   // session/store change. Marking `instructionHydrated` after this lands
@@ -311,6 +363,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
       try {
         await store.save({ ...doc, updatedAt: Date.now() });
         setDocs(await store.list());
+        await syncEarnedMilestones({ announce: true });
         lastSavedAtRef.current = Date.now();
         setSaveState("saved");
       } catch {
@@ -952,6 +1005,9 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
+      {earnedStamp && (
+        <EarnedStampToast milestone={earnedStamp} onClose={() => setEarnedStamp(null)} />
+      )}
       {sidebarOpen && (
         <div className="flex h-full w-[252px] shrink-0 flex-col border-r border-hairline bg-muted/40">
           {session.user && pendingLocalDocs.length > 0 && (
@@ -1455,6 +1511,49 @@ function timeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/* ---------------- EarnedStampToast ---------------- */
+
+function EarnedStampToast({
+  milestone,
+  onClose,
+}: {
+  milestone: EarnedMilestone;
+  onClose: () => void;
+}) {
+  const stampIndex = stampIndexFor(milestone.id);
+  const accent = stampAccentFor(stampIndex);
+  return (
+    <aside
+      role="status"
+      className="fade-up fixed bottom-6 right-6 z-50 w-[300px] rounded-md border border-[color-mix(in_oklch,var(--stamp-accent)_48%,var(--hairline))] bg-background/95 p-3.5 text-foreground shadow-[0_22px_70px_color-mix(in_oklch,var(--stamp-accent)_18%,transparent)] backdrop-blur-md"
+      style={{ "--stamp-accent": accent } as React.CSSProperties}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-2 top-2 text-[14px] leading-none text-muted-foreground transition-colors hover:text-foreground"
+        aria-label="Dismiss earned stamp"
+      >
+        ×
+      </button>
+      <div className="flex items-center gap-3 pr-5">
+        <StampArt stampIndex={stampIndex} className="h-14 w-14" />
+        <div className="min-w-0">
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[color-mix(in_oklch,var(--stamp-accent)_68%,var(--foreground))]">
+            Stamp earned
+          </div>
+          <div className="display mt-1 text-[22px] italic leading-none">
+            {milestone.label}
+          </div>
+          <div className="mt-1.5 text-[11.5px] italic leading-snug text-muted-foreground">
+            {milestone.hint}
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 /* ---------------- ViewToggle ---------------- */
 
 function ViewToggle({
@@ -1511,4 +1610,3 @@ function offsetWithin(root: Node, node: Node, offset: number): number {
   }
   return acc;
 }
-
