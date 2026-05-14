@@ -101,8 +101,10 @@ function computeMilestones(args: {
   totalWords: number;
   languagesReached: number;
   longestStreak: number;
+  longestDocWords: number;
   nightOwlDocs: number;
   weekendDocs: number;
+  weekendPair: boolean;
 }): Milestone[] {
   const M: Milestone[] = [
     {
@@ -130,6 +132,12 @@ function computeMilestones(args: {
       earned: args.longestStreak >= 7,
     },
     {
+      id: "hot-streak",
+      label: "Hot streak",
+      hint: "Translate on three consecutive days.",
+      earned: args.longestStreak >= 3,
+    },
+    {
       id: "night-owl",
       label: "Night owl",
       hint: "Five translations begun between 10pm and 5am.",
@@ -140,6 +148,30 @@ function computeMilestones(args: {
       label: "Weekend translator",
       hint: "Five translations on a Saturday or Sunday.",
       earned: args.weekendDocs >= 5,
+    },
+    {
+      id: "weekend-edition",
+      label: "Weekend edition",
+      hint: "Translate on both Saturday and Sunday in the same weekend.",
+      earned: args.weekendPair,
+    },
+    {
+      id: "line-editor",
+      label: "Line editor",
+      hint: "Translate a document over two thousand words.",
+      earned: args.longestDocWords >= 2_000,
+    },
+    {
+      id: "archivist",
+      label: "The archivist",
+      hint: "Save fifty translations.",
+      earned: args.totalDocs >= 50,
+    },
+    {
+      id: "long-haul",
+      label: "Long haul",
+      hint: "Translate twenty-five thousand words.",
+      earned: args.totalWords >= 25_000,
     },
     {
       id: "centennial",
@@ -176,8 +208,10 @@ export function computeStats(docs: StatDoc[], memberSince: Date | null, now = ne
         totalWords: 0,
         languagesReached: 0,
         longestStreak: 0,
+        longestDocWords: 0,
         nightOwlDocs: 0,
         weekendDocs: 0,
+        weekendPair: false,
       }),
     };
   }
@@ -232,6 +266,8 @@ export function computeStats(docs: StatDoc[], memberSince: Date | null, now = ne
   const hourRhythm = new Array(24).fill(0);
   let nightOwlDocs = 0;
   let weekendDocs = 0;
+  const saturdayActivity = new Set<string>();
+  const sundayActivity = new Set<string>();
 
   for (const d of docs) {
     const day = isoDay(d.createdAt);
@@ -245,8 +281,18 @@ export function computeStats(docs: StatDoc[], memberSince: Date | null, now = ne
     // Night owl: 22:00 — 04:59 inclusive.
     if (hour >= 22 || hour < 5) nightOwlDocs += 1;
     const weekday = d.createdAt.getDay();
-    if (weekday === 0 || weekday === 6) weekendDocs += 1;
+    if (weekday === 0 || weekday === 6) {
+      weekendDocs += 1;
+      if (weekday === 6) saturdayActivity.add(day);
+      else sundayActivity.add(day);
+    }
   }
+
+  const weekendPair = Array.from(saturdayActivity).some((saturday) => {
+    const sunday = new Date(saturday + "T00:00:00Z");
+    sunday.setUTCDate(sunday.getUTCDate() + 1);
+    return sundayActivity.has(isoDay(sunday));
+  });
 
   const weekdayCounts = [0, 0, 0, 0, 0, 0, 0];
   for (const d of docs) weekdayCounts[d.createdAt.getDay()] += 1;
@@ -321,8 +367,10 @@ export function computeStats(docs: StatDoc[], memberSince: Date | null, now = ne
       totalWords,
       languagesReached: targetCounts.size,
       longestStreak,
+      longestDocWords: longest?.words ?? 0,
       nightOwlDocs,
       weekendDocs,
+      weekendPair,
     }),
   };
 }

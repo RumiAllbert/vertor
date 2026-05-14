@@ -434,7 +434,7 @@ svg.lucide,
 }
 .dashboard-stamp-art {
   background-repeat: no-repeat;
-  background-size: 700% 100%;
+  background-size: var(--stamp-sprite-size, 700% 100%);
 }
 
 @media (prefers-reduced-motion: no-preference) {
