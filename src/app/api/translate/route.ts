@@ -4,6 +4,7 @@ import { z } from "zod";
 import { DEFAULT_MODEL_ID } from "@/lib/models";
 import { resolveModel } from "@/lib/model-client";
 import { translationSystem } from "@/lib/prompts";
+import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -23,6 +24,9 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: parsed.error.message }), { status: 400 });
   }
   const { text, targetLang, modelId, instruction } = parsed.data;
+
+  const quota = await consumeRateLimit(req, modelId);
+  if (!quota.allowed) return rateLimitResponse(quota);
 
   const result = streamText({
     model: resolveModel(modelId),

@@ -3,9 +3,11 @@ import { generateText } from "ai";
 import { z } from "zod";
 import { resolveModel } from "@/lib/model-client";
 import { titleSystem } from "@/lib/prompts";
+import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
+const TITLE_MODEL_ID = "gemini-3.1-flash-lite-preview";
 
 const Body = z.object({
   source: z.string().min(20),
@@ -18,8 +20,11 @@ export async function POST(req: NextRequest) {
   // First ~2000 chars is plenty for titling — keeps Flash Lite calls fast/cheap.
   const sample = parsed.data.source.slice(0, 2000);
 
+  const quota = await consumeRateLimit(req, TITLE_MODEL_ID);
+  if (!quota.allowed) return rateLimitResponse(quota);
+
   const { text } = await generateText({
-    model: resolveModel("gemini-3.1-flash-lite-preview"),
+    model: resolveModel(TITLE_MODEL_ID),
     system: titleSystem(),
     prompt: sample,
     temperature: 0.5,

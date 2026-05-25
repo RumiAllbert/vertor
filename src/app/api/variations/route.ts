@@ -4,6 +4,7 @@ import { z } from "zod";
 import { DEFAULT_MODEL_ID } from "@/lib/models";
 import { resolveModel } from "@/lib/model-client";
 import { variationsSystem, type VariationKind } from "@/lib/prompts";
+import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -28,6 +29,9 @@ export async function POST(req: NextRequest) {
   }
   const { selection, sourceContext, translationContext, sourceLang, targetLang, modelId, kind, instruction, basedOn } =
     parsed.data;
+
+  const quota = await consumeRateLimit(req, modelId);
+  if (!quota.allowed) return rateLimitResponse(quota);
 
   const userPrompt = [
     `### Selected ${kind}`,

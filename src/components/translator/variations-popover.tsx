@@ -4,6 +4,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { VariationKind } from "@/lib/prompts";
+import {
+  readRateLimitPayload,
+  type RateLimitPayload,
+} from "@/lib/rate-limit-shared";
 
 type Props = {
   open: boolean;
@@ -15,15 +19,18 @@ type Props = {
   sourceLang: string;
   targetLang: string;
   modelId: string;
+  rateLimited?: boolean;
   onOpenChange: (open: boolean) => void;
   onApply: (replacement: string) => void;
   onApplyToWhole: (instruction: string) => void;
+  onRateLimited?: (payload: RateLimitPayload) => void;
 };
 
 export function VariationsPopover(props: Props) {
   const {
     open, anchor, selection, kind, sourceContext, translationContext,
-    sourceLang, targetLang, modelId, onOpenChange, onApply, onApplyToWhole,
+    sourceLang, targetLang, modelId, rateLimited, onOpenChange, onApply, onApplyToWhole,
+    onRateLimited,
   } = props;
 
   const [variations, setVariations] = React.useState<string[]>([]);
@@ -33,6 +40,7 @@ export function VariationsPopover(props: Props) {
   const [basedOnIndex, setBasedOnIndex] = React.useState<number | null>(null);
   const [instruction, setInstruction] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const blocked = Boolean(rateLimited);
 
   React.useEffect(() => {
     if (open) {
@@ -44,6 +52,7 @@ export function VariationsPopover(props: Props) {
 
   const fetchVariations = React.useCallback(
     async (basedOn?: string, basedIdx?: number) => {
+      if (blocked) return;
       setLoading(true);
       setBasedOnIndex(basedIdx ?? null);
       setError(null);
@@ -58,6 +67,11 @@ export function VariationsPopover(props: Props) {
           }),
         });
         if (!res.ok) {
+          if (res.status === 429) {
+            const payload = await readRateLimitPayload(res);
+            if (payload) onRateLimited?.(payload);
+            throw new Error(payload?.message ?? "Quota reached. Try again later.");
+          }
           const t = await res.text();
           throw new Error(t || `HTTP ${res.status}`);
         }
@@ -70,7 +84,18 @@ export function VariationsPopover(props: Props) {
         setBasedOnIndex(null);
       }
     },
-    [selection, sourceContext, translationContext, sourceLang, targetLang, modelId, kind, instruction],
+    [
+      blocked,
+      selection,
+      sourceContext,
+      translationContext,
+      sourceLang,
+      targetLang,
+      modelId,
+      kind,
+      instruction,
+      onRateLimited,
+    ],
   );
 
   // "More like this" is only meaningful for phrase/paragraph/document.
@@ -113,11 +138,11 @@ export function VariationsPopover(props: Props) {
           <div className="flex items-center justify-between gap-3">
             <button
               onClick={() => fetchVariations()}
-              disabled={loading}
+              disabled={loading || blocked}
               className="inline-flex items-center gap-2 text-[12px] text-foreground transition-colors hover:text-ink disabled:opacity-50"
             >
               <span className="font-mono text-[11px]">{loading && basedOnIndex === null ? "…" : "→"}</span>
-              {variations.length ? "Regenerate" : "Suggest three"}
+              {suggestLabel(blocked, variations.length)}
             </button>
             {kind !== "document" && instruction.trim() && (
               <button
@@ -176,7 +201,7 @@ export function VariationsPopover(props: Props) {
                         e.stopPropagation();
                         fetchVariations(v, i);
                       }}
-                      disabled={loading}
+                      disabled={loading || blocked}
                       className={cn(
                         "absolute right-3 top-3 text-[10px] italic text-muted-foreground transition-colors",
                         "hover:text-ink disabled:cursor-not-allowed disabled:opacity-50",
@@ -200,4 +225,9 @@ export function VariationsPopover(props: Props) {
       </PopoverContent>
     </Popover>
   );
+}
+
+function suggestLabel(blocked: boolean, count: number): string {
+  if (blocked) return "Quota refreshes soon";
+  return count ? "Regenerate" : "Suggest three";
 }

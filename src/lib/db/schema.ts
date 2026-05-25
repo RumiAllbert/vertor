@@ -82,6 +82,13 @@ export const verificationTokens = pgTable(
   (vt) => [primaryKey({ columns: [vt.identifier, vt.token] })],
 );
 
+export const rateLimitBuckets = pgTable("rateLimitBucket", {
+  key: text("key").primaryKey(),
+  windowStart: timestamp("windowStart", { mode: "date" }).notNull(),
+  count: integer("count").notNull().default(0),
+  updatedAt: timestamp("updatedAt", { mode: "date" }).defaultNow().notNull(),
+});
+
 // document.id is `text` rather than `uuid` so the client can supply its own
 // nanoid-style ids on POST. This keeps client state and server state in sync
 // across a single document's lifetime — without a text id, a PATCH that

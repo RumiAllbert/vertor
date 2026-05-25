@@ -8,6 +8,7 @@ import {
   findParagraphIndex,
   locateMatch,
 } from "@/lib/alignment";
+import { consumeRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -89,6 +90,9 @@ export async function POST(req: NextRequest) {
     `### Target-side text (full)`,
     toText,
   ].join("\n");
+
+  const quota = await consumeRateLimit(req, ALIGN_MODEL_ID);
+  if (!quota.allowed) return rateLimitResponse(quota);
 
   let match: string | null = null;
   try {

@@ -12,6 +12,12 @@ import { UserMenu, type SessionInfo } from "./user-menu";
 import { VariationsPopover } from "./variations-popover";
 import { ModeToggle, useMode } from "./mode-toggle";
 import { SIMPLE_MODE_MODEL_ID } from "@/lib/models";
+import {
+  readRateLimitPayload,
+  tierForModel,
+  type RateLimitPayload,
+  type RateLimitTier,
+} from "@/lib/rate-limit-shared";
 import { Textarea } from "@/components/ui/textarea";
 import {
   newLocalDoc,
@@ -61,6 +67,12 @@ type EarnedMilestone = {
   label: string;
   hint: string;
   earned: boolean;
+};
+
+type RateLimitNotice = {
+  tier: RateLimitTier;
+  resetAt: number;
+  message: string;
 };
 
 type SelectionInfo = {
@@ -173,8 +185,11 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   const [popoverOpen, setPopoverOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
   const [earnedStamp, setEarnedStamp] = React.useState<EarnedMilestone | null>(null);
+  const [rateLimitNotice, setRateLimitNotice] = React.useState<RateLimitNotice | null>(null);
+  const [rateLimitBlocked, setRateLimitBlocked] = React.useState<Partial<Record<RateLimitTier, boolean>>>({});
   const milestonesHydratedRef = React.useRef(false);
   const earnedStampTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rateLimitTimerRef = React.useRef<Partial<Record<RateLimitTier, ReturnType<typeof setTimeout>>>>({});
 
   // On mobile the two panes become a tabbed view showing one at a time.
   const [mobilePane, setMobilePane] = React.useState<"source" | "translation">("source");
@@ -227,6 +242,9 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
     () => () => {
       if (readHintTimerRef.current) clearTimeout(readHintTimerRef.current);
       if (earnedStampTimerRef.current) clearTimeout(earnedStampTimerRef.current);
+      Object.values(rateLimitTimerRef.current).forEach((timer) => {
+        if (timer) clearTimeout(timer);
+      });
     },
     [],
   );
@@ -465,6 +483,34 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
   }, [mode, doc.modelId]);
 
   const effectiveModelId = mode === "simple" ? SIMPLE_MODE_MODEL_ID : doc.modelId;
+  const effectiveRateTier = tierForModel(effectiveModelId);
+  const isRateLimited = Boolean(rateLimitBlocked[effectiveRateTier]);
+
+  const showRateLimit = React.useCallback((payload: RateLimitPayload) => {
+    const tier = payload.tier ?? "premium";
+    const resetAt =
+      payload.resetAt && !Number.isNaN(Date.parse(payload.resetAt))
+        ? Date.parse(payload.resetAt)
+        : Date.now() + Math.max(1, payload.retryAfter ?? 60) * 1000;
+    const message =
+      payload.message ??
+      (tier === "flash"
+        ? "Flash quota is used up for this 6-hour window."
+        : "Premium-model quota is used up for this 6-hour window.");
+    setRateLimitBlocked((prev) => (prev[tier] ? prev : { ...prev, [tier]: true }));
+    if (rateLimitTimerRef.current[tier]) {
+      clearTimeout(rateLimitTimerRef.current[tier]);
+    }
+    rateLimitTimerRef.current[tier] = setTimeout(() => {
+      setRateLimitBlocked((prev) => (prev[tier] ? { ...prev, [tier]: false } : prev));
+      delete rateLimitTimerRef.current[tier];
+    }, Math.max(1000, resetAt - Date.now()));
+    setRateLimitNotice((prev) =>
+      prev && prev.tier === tier && prev.resetAt === resetAt && prev.message === message
+        ? prev
+        : { tier, resetAt, message },
+    );
+  }, []);
 
   // Auto-title — after the source text settles, ask Flash Lite for a short
   // title in the source language. Skip if the user has touched the title.
@@ -592,7 +638,6 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
       const controller = new AbortController();
       abortRef.current = controller;
       setTranslating(true);
-      setDoc((d) => ({ ...d, translatedText: "" }));
       try {
         const res = await fetch("/api/translate", {
           method: "POST",
@@ -607,9 +652,15 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
           }),
         });
         if (!res.ok || !res.body) {
+          if (res.status === 429) {
+            const payload = await readRateLimitPayload(res);
+            if (payload) showRateLimit(payload);
+            return;
+          }
           const t = await res.text().catch(() => "");
           throw new Error(t || `HTTP ${res.status}`);
         }
+        setDoc((d) => ({ ...d, translatedText: "" }));
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let acc = "";
@@ -634,7 +685,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
         abortRef.current = null;
       }
     },
-    [doc.sourceText, doc.sourceLang, doc.targetLang, effectiveModelId, globalInstruction, capture],
+    [doc.sourceText, doc.sourceLang, doc.targetLang, effectiveModelId, globalInstruction, capture, showRateLimit],
   );
 
   const detectLanguage = React.useCallback(async () => {
@@ -1034,6 +1085,9 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
       {earnedStamp && (
         <EarnedStampToast milestone={earnedStamp} onClose={() => setEarnedStamp(null)} />
       )}
+      {rateLimitNotice && (
+        <RateLimitToast notice={rateLimitNotice} onClose={() => setRateLimitNotice(null)} />
+      )}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-30 bg-foreground/20 md:hidden"
@@ -1139,7 +1193,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
 
           <button
             onClick={() => translate()}
-            disabled={!doc.sourceText.trim() || translating}
+            disabled={!doc.sourceText.trim() || translating || isRateLimited}
             className={cn(
               "group inline-flex h-8 items-center gap-2 rounded-sm border border-foreground bg-foreground px-3.5 text-[12.5px] font-medium tracking-tight text-background shadow-[2px_2px_0_var(--ink)] transition-all",
               "hover:translate-x-[-1px] hover:translate-y-[-1px] hover:shadow-[3px_3px_0_var(--ink)]",
@@ -1155,7 +1209,7 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
               )}
             />
             <span className={translating ? "shiny" : ""}>
-              {translating ? "Translating" : "Translate"}
+              {translateButtonLabel(translating, isRateLimited)}
             </span>
             {!translating && (
               <span aria-hidden className="font-mono text-[11px] opacity-60">↵</span>
@@ -1425,11 +1479,13 @@ export function TranslatorApp({ session }: { session: SessionInfo }) {
                     translationContext={translationContext}
                     sourceLang={doc.sourceLang === "auto" ? detectedLang ?? "auto" : doc.sourceLang}
                     targetLang={doc.targetLang}
-                    modelId={doc.modelId}
+                    modelId={effectiveModelId}
+                    rateLimited={isRateLimited}
                     onOpenChange={(o) => {
                       setPopoverOpen(o);
                       if (!o) setSelection(null);
                     }}
+                    onRateLimited={showRateLimit}
                     onApply={applyReplacement}
                     onApplyToWhole={(instruction) => {
                       setGlobalInstruction(instruction);
@@ -1615,6 +1671,19 @@ function timeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+function timeUntil(ts: number): string {
+  const s = Math.max(0, Math.ceil((ts - Date.now()) / 1000));
+  if (s < 60) return "in under a minute";
+  if (s < 3600) return `in ${Math.ceil(s / 60)} min`;
+  return `in ${Math.ceil(s / 3600)} hr`;
+}
+
+function translateButtonLabel(translating: boolean, rateLimited: boolean): string {
+  if (translating) return "Translating";
+  if (rateLimited) return "Quota refreshes soon";
+  return "Translate";
+}
+
 /* ---------------- EarnedStampToast ---------------- */
 
 function EarnedStampToast({
@@ -1653,6 +1722,41 @@ function EarnedStampToast({
             {milestone.hint}
           </div>
         </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ---------------- RateLimitToast ---------------- */
+
+function RateLimitToast({
+  notice,
+  onClose,
+}: {
+  notice: RateLimitNotice;
+  onClose: () => void;
+}) {
+  return (
+    <aside
+      role="alert"
+      className="fade-up fixed bottom-6 right-6 z-50 w-[310px] rounded-md border border-foreground bg-background/95 py-3.5 pl-3.5 pr-8 text-foreground shadow-[2px_2px_0_var(--ink)] backdrop-blur-md"
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-2 top-2 text-[14px] leading-none text-muted-foreground transition-colors hover:text-foreground"
+        aria-label="Dismiss quota notice"
+      >
+        ×
+      </button>
+      <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink">
+        Quota reached
+      </div>
+      <div className="mt-2 text-[12.5px] leading-snug text-muted-foreground">
+        {notice.message}
+      </div>
+      <div className="mt-2 text-[11px] italic text-muted-foreground">
+        Refreshes {timeUntil(notice.resetAt)}. Saved documents and cached highlights still work.
       </div>
     </aside>
   );
